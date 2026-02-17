@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flashs"
+version = "0.1.0"
+description = "Flash-S: Frequency-domain Linearized Adaptive Spatial Hypothesis testing via Sketching"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Flash-S Authors"}
+]
+keywords = [
+    "spatial-transcriptomics",
+    "spatial-expression",
+    "random-fourier-features",
+    "hypothesis-testing",
+    "bioinformatics"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+dependencies = [
+    "numpy>=1.20",
+    "scipy>=1.7",
+    "numba>=0.55",
+]
+
+[project.optional-dependencies]
+io = [
+    "anndata>=0.10.9",
+    "pandas>=2.3.3",
+]
+viz = [
+    "matplotlib>=3.9.4",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
+]
+bench = [
+    "anndata>=0.10.9",
+    "matplotlib>=3.9.4",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
+]
+full = [
+    "anndata>=0.10.9",
+    "matplotlib>=3.9.4",
+    "pandas>=2.3.3",
+    "seaborn>=0.13.2",
+    "numba>=0.55",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+    "pytest-cov>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/cafferychen777/FlashS"
+Documentation = "https://github.com/cafferychen777/FlashS/tree/main/docs"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flashs*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "integration: end-to-end behavior tests",
+    "slow: long-running statistical tests",
+]
