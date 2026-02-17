@@ -104,8 +104,9 @@ If you use FlashS in your research, please cite:
 
 ```bibtex
 @article{yang2026flashs,
-  title={FlashS: Ultra-fast Spatially Variable Gene Detection
-         via Random Fourier Features and Sparse Sketching},
+  title={Frequency-domain sparse kernel testing enables scalable
+         spatially variable gene discovery with controlled inference
+         at atlas scale},
   author={Yang, Chen and Zhang, Xianyang and Chen, Jun},
   year={2026},
   journal={Manuscript submitted},
