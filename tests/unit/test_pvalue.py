@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from flashs.core.pvalue import adjust_pvalues, batch_cauchy_combination, cauchy_combination
 
@@ -93,10 +94,33 @@ def test_cauchy_zero_weights_returns_one() -> None:
 
 def test_adjust_pvalues_rejects_out_of_range() -> None:
     """adjust_pvalues must reject p-values outside [0, 1]."""
-    import pytest
-
     with pytest.raises(ValueError, match=r"P-values must be in \[0, 1\]"):
         adjust_pvalues(np.array([-0.1, 0.2, 0.5]), "bh")
 
     with pytest.raises(ValueError, match=r"P-values must be in \[0, 1\]"):
         adjust_pvalues(np.array([0.2, 1.5]), "bonferroni")
+
+
+def test_cauchy_combination_empty_and_single_valid_paths() -> None:
+    assert cauchy_combination(np.array([])) == 1.0
+    assert cauchy_combination(np.array([0.123])) == pytest.approx(0.123)
+    # invalid entries are filtered; single valid p-value is returned
+    assert cauchy_combination(np.array([np.inf, 0.37])) == pytest.approx(0.37)
+
+
+def test_adjust_pvalues_empty_all_nan_and_multiple_methods() -> None:
+    empty = np.array([], dtype=float)
+    np.testing.assert_array_equal(adjust_pvalues(empty, method="bh"), empty)
+
+    all_nan = np.array([np.nan, np.nan], dtype=float)
+    out_nan = adjust_pvalues(all_nan, method="storey")
+    assert np.isnan(out_nan).all()
+
+    p = np.array([0.01, 0.2, 0.03, 0.9], dtype=float)
+    for method in ("none", "bonferroni", "holm", "by", "storey"):
+        out = adjust_pvalues(p, method=method)
+        assert out.shape == p.shape
+        assert np.all((out >= 0.0) & (out <= 1.0))
+
+    with pytest.raises(ValueError, match="Unknown method"):
+        adjust_pvalues(p, method="bad")  # type: ignore[arg-type]
