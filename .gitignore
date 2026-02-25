@@ -44,8 +44,11 @@ htmlcov/
 *.feather
 data/
 
-# Results
-benchmarks/results/
+# Benchmarks (local research workspace; not part of distributable package)
+benchmarks/
+
+# Local Open Problems helper scripts
+open_problems/*.sh
 
 # Paper (kept locally, not in repo)
 paper/
