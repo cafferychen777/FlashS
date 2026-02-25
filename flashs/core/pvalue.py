@@ -13,7 +13,6 @@ from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy import stats
 
 
 def _cauchy_t_to_pvalue(T_cct: NDArray[np.floating]) -> NDArray[np.floating]:
@@ -86,19 +85,23 @@ def cauchy_combination(
 
     if len(pvalues) == 0:
         return 1.0
-    if len(pvalues) == 1:
-        return float(np.clip(pvalues[0], np.finfo(float).tiny, 1.0))
 
-    # Exclude only genuinely invalid entries (NaN, Inf)
+    # Exclude genuinely invalid entries (NaN, Inf) before any logic
     valid_mask = np.isfinite(pvalues)
     if not np.any(valid_mask):
         return 1.0
+
+    if np.sum(valid_mask) == 1:
+        return float(np.clip(pvalues[valid_mask][0], np.finfo(float).tiny, 1.0))
 
     p_valid = pvalues[valid_mask]
 
     if weights is not None:
         w = np.asarray(weights, dtype=float)[valid_mask]
-        w = w / np.sum(w)
+        w_sum = np.sum(w)
+        if w_sum == 0.0:
+            return 1.0  # zero total weight → no evidence
+        w = w / w_sum
     else:
         w = np.ones(len(p_valid)) / len(p_valid)
 
@@ -130,11 +133,26 @@ def batch_cauchy_combination(
     combined : ndarray of shape (n_tests,)
         Combined p-values.
     """
-    p_safe = np.clip(pvalues_matrix, 1e-15, 1 - 1e-15)
-    cauchy_stats = np.tan((0.5 - p_safe) * np.pi)
-    T_cct = np.mean(cauchy_stats, axis=1)
+    pvalues_matrix = np.asarray(pvalues_matrix, dtype=float)
 
-    return _cauchy_t_to_pvalue(T_cct)
+    # Mask NaN/Inf entries — consistent with cauchy_combination
+    valid_mask = np.isfinite(pvalues_matrix)
+    n_valid_per_row = valid_mask.sum(axis=1)
+    all_invalid = n_valid_per_row == 0
+
+    p_safe = np.where(valid_mask, np.clip(pvalues_matrix, 1e-15, 1 - 1e-15), 0.0)
+    cauchy_stats = np.tan((0.5 - p_safe) * np.pi)
+
+    # Zero out invalid entries so they don't contribute to the sum
+    cauchy_stats = np.where(valid_mask, cauchy_stats, 0.0)
+    # Mean over valid entries only (safe: all_invalid rows handled below)
+    safe_n = np.where(all_invalid, 1, n_valid_per_row)
+    T_cct = cauchy_stats.sum(axis=1) / safe_n
+
+    result = _cauchy_t_to_pvalue(T_cct)
+    # No valid evidence → cannot reject H0 → p = 1.0
+    result[all_invalid] = 1.0
+    return result
 
 
 def adjust_pvalues(
@@ -162,7 +180,7 @@ def adjust_pvalues(
     adjusted : ndarray
         Adjusted P-values (q-values for BH/BY/Storey).
     """
-    pvalues = np.asarray(pvalues)
+    pvalues = np.asarray(pvalues, dtype=float)
     n = len(pvalues)
 
     if n == 0:
@@ -172,6 +190,14 @@ def adjust_pvalues(
     nan_mask = np.isnan(pvalues)
     valid_pvalues = pvalues[~nan_mask]
     n_valid = len(valid_pvalues)
+
+    # Validate p-values are in [0, 1] (after NaN exclusion)
+    if n_valid > 0:
+        pmin, pmax = valid_pvalues.min(), valid_pvalues.max()
+        if pmin < 0.0 or pmax > 1.0:
+            raise ValueError(
+                f"P-values must be in [0, 1], got range [{pmin:.6g}, {pmax:.6g}]"
+            )
 
     if n_valid == 0:
         return pvalues
@@ -252,34 +278,3 @@ def adjust_pvalues(
     adjusted[~nan_mask] = adjusted_valid
 
     return adjusted
-
-
-def compute_batch_pvalues(
-    T_values: NDArray[np.floating],
-    scale: float,
-    df: float,
-) -> NDArray[np.floating]:
-    """
-    Compute P-values for multiple genes efficiently.
-
-    Parameters
-    ----------
-    T_values : ndarray of shape (n_genes,)
-        Test statistics.
-    scale : float
-        Common scale factor.
-    df : float
-        Degrees of freedom.
-
-    Returns
-    -------
-    pvalues : ndarray
-        P-values for each gene.
-    """
-    scaled_T = T_values / scale
-    pvalues = stats.chi2.sf(scaled_T, df)
-
-    # Numerical protection
-    pvalues = np.clip(pvalues, np.finfo(float).tiny, 1.0)
-
-    return pvalues

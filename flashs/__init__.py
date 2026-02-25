@@ -24,7 +24,7 @@ With AnnData:
 >>> result = run_flashs(adata, spatial_key="spatial")
 """
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 # Main API
 from .model import (

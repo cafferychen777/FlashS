@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flashs"
-version = "0.1.0"
+version = "0.1.1"
 description = "Flash-S: Frequency-domain Linearized Adaptive Spatial Hypothesis testing via Sketching"
 readme = "README.md"
 license = {text = "MIT"}

@@ -278,13 +278,23 @@ def compute_cov_frobenius_per_scale(
     scale_offsets: NDArray[np.int64],
     max_samples: int = 10000,
     random_state: int | None = None,
-) -> NDArray[np.float64]:
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
     """
-    Compute per-scale ||Cov_z||_F^2 for corrected Satterthwaite variance.
+    Compute per-scale ||Cov_z||_F^2 and mean row-norm 4th power.
 
     The standard Satterthwaite approximation assumes independent Z columns,
     but RFF features at large bandwidths are correlated. The corrected
     variance uses ||Cov_z||_F^2 instead of sum(Var(z_k)^2).
+
+    Additionally computes E[||z_{c,i}||^4] per scale for the kurtosis
+    correction term in Var[T]. For non-Gaussian expression vectors with
+    excess kurtosis kappa_4:
+
+        Var[T_s] = 2 sigma^4 n^2 ||Cov_s||_F^2
+                 + kappa_4 sigma^4 n E[||z_{c,s,i}||^4]
+
+    The second term is missing under the Gaussian assumption (kappa_4=0)
+    and causes FPR inflation for zero-inflated data where kappa_4 >> 0.
 
     Parameters
     ----------
@@ -307,6 +317,9 @@ def compute_cov_frobenius_per_scale(
     -------
     frob_sq : ndarray (n_scales,)
         Per-scale ||Cov_z||_F^2 values.
+    row_norm4 : ndarray (n_scales,)
+        Per-scale E[||z_{c,s,i}||^4] (mean of 4th power of centered
+        row norms), estimated on the subsample.
     """
     n = coords.shape[0]
 
@@ -323,9 +336,10 @@ def compute_cov_frobenius_per_scale(
 
     n_scales = len(scale_offsets) - 1
     frob_sq = np.zeros(n_scales)
+    row_norm4 = np.zeros(n_scales)
 
     if M == 0:
-        return frob_sq
+        return frob_sq, row_norm4
 
     # Stream per-scale: materialize only (M, D_s) instead of full (M, D).
     # Centering is column-wise so per-scale centering is mathematically
@@ -342,5 +356,8 @@ def compute_cov_frobenius_per_scale(
         Gram_s = Z_s.T @ Z_s
         Gram_s /= M
         frob_sq[s] = np.sum(Gram_s * Gram_s)
+        # E[||z_{c,s,i}||^4]: mean of squared row-norm squared
+        row_norms_sq = np.sum(Z_s ** 2, axis=1)
+        row_norm4[s] = np.mean(row_norms_sq ** 2)
 
-    return frob_sq
+    return frob_sq, row_norm4

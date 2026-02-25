@@ -58,7 +58,7 @@ def estimate_bandwidth(
         - 'auto': Combines median and spectral methods
         - 'median': Based on median nearest neighbor distance
         - 'spectral': Based on Laplacian eigenvalue analysis
-        - 'quantile': Fixed quantiles of pairwise distances
+        - 'quantile': Fixed quantiles of KNN distances
     n_neighbors : int, default=10
         Number of neighbors for local geometry estimation.
     quantiles : list of float, optional
