@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
+from scipy import sparse
 
 from flashs import FlashS
 
@@ -32,3 +34,19 @@ def test_gene_names_length_validation(small_coords, small_sparse_expr) -> None:
 
     with pytest.raises(ValueError, match="gene_names length"):
         model.test(small_sparse_expr, gene_names=["only_one_name"])
+
+
+def test_auto_normalize_uses_deterministic_global_max() -> None:
+    model = FlashS()
+    row = np.ones(10001, dtype=np.float64)
+    row[-1] = 1000.0
+    X = sparse.csr_matrix(row.reshape(1, -1))
+
+    out = model._normalize_expression(
+        X=X,
+        normalize="auto",
+        log_transform=False,
+        verbose=False,
+    )
+    total = float(np.asarray(out.sum(axis=1)).ravel()[0])
+    assert total == pytest.approx(1e4)

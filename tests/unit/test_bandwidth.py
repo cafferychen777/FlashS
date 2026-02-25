@@ -27,3 +27,30 @@ def test_small_sample_fallbacks_are_stable() -> None:
 
     scales = compute_adaptive_scales(coords, n_scales=4)
     assert scales == [1.0, 1.0, 1.0, 1.0]
+
+
+def test_spectral_fallback_handles_expected_solver_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coords = np.random.default_rng(3).random((60, 2))
+
+    def _raise_value_error(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise ValueError("solver failed")
+
+    monkeypatch.setattr("flashs.core.bandwidth.lobpcg", _raise_value_error)
+    bw = estimate_bandwidth(coords, method="spectral", random_state=0)
+    assert np.isfinite(bw.primary)
+    assert bw.primary > 0
+
+
+def test_spectral_fallback_does_not_swallow_interrupts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coords = np.random.default_rng(4).random((60, 2))
+
+    def _raise_interrupt(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("flashs.core.bandwidth.lobpcg", _raise_interrupt)
+    with pytest.raises(KeyboardInterrupt):
+        estimate_bandwidth(coords, method="spectral", random_state=0)

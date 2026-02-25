@@ -155,6 +155,81 @@ def batch_cauchy_combination(
     return result
 
 
+def _adjust_holm(valid_pvalues: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Holm step-down adjustment."""
+    n_valid = len(valid_pvalues)
+    order = np.argsort(valid_pvalues)
+    adjusted = np.zeros(n_valid, dtype=np.float64)
+
+    for i, idx in enumerate(order):
+        adjusted[idx] = valid_pvalues[idx] * (n_valid - i)
+
+    adjusted[order] = np.maximum.accumulate(adjusted[order])
+    return np.minimum(adjusted, 1.0)
+
+
+def _adjust_bh_by(
+    valid_pvalues: NDArray[np.float64],
+    method: Literal["bh", "by"],
+) -> NDArray[np.float64]:
+    """Benjamini-Hochberg / Benjamini-Yekutieli adjustment."""
+    n_valid = len(valid_pvalues)
+    order = np.argsort(valid_pvalues)
+    ranks = np.arange(1, n_valid + 1, dtype=np.float64)
+    adjusted_sorted = valid_pvalues[order] * n_valid / ranks
+
+    if method == "by":
+        adjusted_sorted *= np.sum(1.0 / ranks)
+
+    adjusted_sorted = np.minimum.accumulate(adjusted_sorted[::-1])[::-1]
+    adjusted_sorted = np.minimum(adjusted_sorted, 1.0)
+
+    adjusted = np.zeros(n_valid, dtype=np.float64)
+    adjusted[order] = adjusted_sorted
+    return adjusted
+
+
+def _adjust_storey(valid_pvalues: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Storey's q-value adjustment with pi0 estimation."""
+    n_valid = len(valid_pvalues)
+    lambdas = np.arange(0.05, 0.95, 0.05)
+    pi0_estimates = np.array(
+        [np.mean(valid_pvalues > lam) / (1 - lam) for lam in lambdas],
+        dtype=np.float64,
+    )
+    pi0 = min(1.0, float(np.mean(pi0_estimates[-5:])))
+
+    order = np.argsort(valid_pvalues)
+    pvalues_sorted = valid_pvalues[order]
+    ranks = np.arange(1, n_valid + 1, dtype=np.float64)
+    adjusted_sorted = pi0 * n_valid * pvalues_sorted / ranks
+    adjusted_sorted = np.minimum.accumulate(adjusted_sorted[::-1])[::-1]
+    adjusted_sorted = np.minimum(adjusted_sorted, 1.0)
+
+    adjusted = np.zeros(n_valid, dtype=np.float64)
+    adjusted[order] = adjusted_sorted
+    return adjusted
+
+
+def _dispatch_adjustment(
+    valid_pvalues: NDArray[np.float64],
+    method: Literal["bh", "bonferroni", "holm", "by", "storey", "none"],
+) -> NDArray[np.float64]:
+    """Apply one multiple-testing method to finite p-values only."""
+    n_valid = len(valid_pvalues)
+    if method == "none":
+        return valid_pvalues.copy()
+    if method == "bonferroni":
+        return np.minimum(valid_pvalues * n_valid, 1.0)
+    if method == "holm":
+        return _adjust_holm(valid_pvalues)
+    if method in ("bh", "by"):
+        return _adjust_bh_by(valid_pvalues, method=method)
+    if method == "storey":
+        return _adjust_storey(valid_pvalues)
+    raise ValueError(f"Unknown method: {method}")
+
+
 def adjust_pvalues(
     pvalues: NDArray[np.floating],
     method: Literal["bh", "bonferroni", "holm", "by", "storey", "none"] = "bh",
@@ -202,76 +277,7 @@ def adjust_pvalues(
     if n_valid == 0:
         return pvalues
 
-    if method == "none":
-        # No correction - return raw p-values
-        adjusted_valid = valid_pvalues.copy()
-
-    elif method == "bonferroni":
-        adjusted_valid = np.minimum(valid_pvalues * n_valid, 1.0)
-
-    elif method == "holm":
-        # Holm step-down procedure
-        order = np.argsort(valid_pvalues)
-        adjusted_valid = np.zeros(n_valid)
-
-        for i, idx in enumerate(order):
-            adjusted_valid[idx] = valid_pvalues[idx] * (n_valid - i)
-
-        # Enforce monotonicity
-        adjusted_valid[order] = np.maximum.accumulate(adjusted_valid[order])
-        adjusted_valid = np.minimum(adjusted_valid, 1.0)
-
-    elif method in ("bh", "by"):
-        # Benjamini-Hochberg or Benjamini-Yekutieli
-        order = np.argsort(valid_pvalues)
-        ranks = np.arange(1, n_valid + 1)
-
-        if method == "by":
-            # BY includes correction factor c(m) = sum(1/i)
-            cm = np.sum(1.0 / ranks)
-            adjusted_valid = valid_pvalues[order] * n_valid * cm / ranks
-        else:
-            adjusted_valid = valid_pvalues[order] * n_valid / ranks
-
-        # Enforce monotonicity (from largest to smallest)
-        adjusted_valid = np.minimum.accumulate(adjusted_valid[::-1])[::-1]
-        adjusted_valid = np.minimum(adjusted_valid, 1.0)
-
-        # Restore original order
-        adjusted_valid_orig = np.zeros(n_valid)
-        adjusted_valid_orig[order] = adjusted_valid
-        adjusted_valid = adjusted_valid_orig
-
-    elif method == "storey":
-        # Storey's q-value method (less conservative than BH)
-        # Estimates π₀ (proportion of true nulls) to get tighter FDR control
-
-        # Estimate π₀ using the smoother method
-        lambdas = np.arange(0.05, 0.95, 0.05)
-        pi0_estimates = np.array([
-            np.mean(valid_pvalues > lam) / (1 - lam) for lam in lambdas
-        ])
-        # Use smoothed estimate from high lambda values
-        pi0 = min(1.0, np.mean(pi0_estimates[-5:]))
-
-        # Sort p-values
-        order = np.argsort(valid_pvalues)
-        pvalues_sorted = valid_pvalues[order]
-        ranks = np.arange(1, n_valid + 1)
-
-        # Compute q-values: q(p) = min_{t>=p} π₀ * m * p / #{p_j <= p}
-        adjusted_sorted = pi0 * n_valid * pvalues_sorted / ranks
-
-        # Enforce monotonicity (from largest to smallest)
-        adjusted_sorted = np.minimum.accumulate(adjusted_sorted[::-1])[::-1]
-        adjusted_sorted = np.minimum(adjusted_sorted, 1.0)
-
-        # Restore original order
-        adjusted_valid = np.zeros(n_valid)
-        adjusted_valid[order] = adjusted_sorted
-
-    else:
-        raise ValueError(f"Unknown method: {method}")
+    adjusted_valid = _dispatch_adjustment(valid_pvalues, method=method)
 
     # Restore NaN positions
     adjusted = np.full(n, np.nan)

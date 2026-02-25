@@ -246,6 +246,8 @@ def _estimate_spectral_scale(
             warnings.simplefilter("ignore")  # Suppress LOBPCG convergence warnings
             eigenvalues, _ = lobpcg(norm_adj, X0, largest=True, maxiter=200)
         eigenvalues = np.sort(eigenvalues)[::-1]
+        if eigenvalues.shape[0] < 2 or not np.all(np.isfinite(eigenvalues)):
+            raise RuntimeError("Invalid eigenvalues from LOBPCG")
 
         # Fiedler value of L is 1 - second largest eigenvalue of norm_adj
         fiedler = 1.0 - eigenvalues[1]
@@ -257,8 +259,9 @@ def _estimate_spectral_scale(
         else:
             spectral_scale = sigma
 
-    except Exception:
-        # Fall back to median-based estimate if eigendecomposition fails
+    except (np.linalg.LinAlgError, ValueError, RuntimeError):
+        # Fall back to median-based estimate for expected eigensolver failures.
+        # Do not swallow interrupts or unrelated programmer errors.
         spectral_scale = sigma
 
     return float(spectral_scale)

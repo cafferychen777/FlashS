@@ -48,10 +48,25 @@ def _store_result(
     adata.var[f"{key_added}_statistic"] = np.nan
     adata.var[f"{key_added}_effect_size"] = np.nan
 
-    # Initialize extra columns
+    extra_items: list[tuple[str, np.ndarray]] = []
     if extra_fields:
-        for col_name in extra_fields:
-            default = 0 if "n_" in col_name else np.nan
+        expected_len = len(result.gene_names)
+        for col_name, values in extra_fields.items():
+            arr = np.asarray(values)
+            if arr.ndim != 1:
+                raise ValueError(
+                    f"extra_fields['{col_name}'] must be 1D, got shape {arr.shape}"
+                )
+            if arr.shape[0] != expected_len:
+                raise ValueError(
+                    f"extra_fields['{col_name}'] length ({arr.shape[0]}) "
+                    f"does not match result length ({expected_len})"
+                )
+            extra_items.append((col_name, arr))
+            if np.issubdtype(arr.dtype, np.integer) or np.issubdtype(arr.dtype, np.bool_):
+                default = 0
+            else:
+                default = np.nan
             adata.var[f"{key_added}_{col_name}"] = default
 
     # Vectorized assignment: find genes that exist in adata
@@ -66,8 +81,8 @@ def _store_result(
         adata.var.loc[valid_genes, f"{key_added}_statistic"] = result.statistics[valid_indices]
         adata.var.loc[valid_genes, f"{key_added}_effect_size"] = result.effect_size[valid_indices]
 
-        if extra_fields:
-            for col_name, values in extra_fields.items():
+        if extra_items:
+            for col_name, values in extra_items:
                 adata.var.loc[valid_genes, f"{key_added}_{col_name}"] = values[valid_indices]
 
     # Store metadata
@@ -203,13 +218,30 @@ def _extract_adata(
 
     # Filter genes if specified
     if genes is not None:
-        gene_mask = adata.var_names.isin(genes)
-        if not gene_mask.any():
+        if not adata.var_names.is_unique:
+            raise ValueError(
+                "adata.var_names must be unique when selecting genes by name; "
+                "call adata.var_names_make_unique() first"
+            )
+
+        name_to_idx = {name: i for i, name in enumerate(gene_names)}
+        seen: set[str] = set()
+        selected_indices: list[int] = []
+        selected_names: list[str] = []
+        for gene in genes:
+            # Keep user order; skip duplicate requests to avoid redundant columns.
+            if gene in seen:
+                continue
+            seen.add(gene)
+            idx = name_to_idx.get(gene)
+            if idx is not None:
+                selected_indices.append(idx)
+                selected_names.append(gene)
+
+        if not selected_indices:
             raise ValueError("None of the specified genes found in adata")
-        gene_indices = np.where(gene_mask)[0]
+        gene_indices = np.asarray(selected_indices, dtype=np.intp)
         X = X[:, gene_indices]
-        gene_names = [gene_names[i] for i in gene_indices]
+        gene_names = selected_names
 
     return coords, X, gene_names
-
-

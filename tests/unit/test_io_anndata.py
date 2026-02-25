@@ -41,19 +41,19 @@ def _make_adata() -> ad.AnnData:
     return adata
 
 
-def test_extract_adata_reads_layer_and_filters_genes_in_var_order() -> None:
+def test_extract_adata_reads_layer_and_filters_genes_in_user_order() -> None:
     adata = _make_adata()
     coords, X, gene_names = _extract_adata(
         adata=adata,
         spatial_key="spatial",
         layer="counts",
-        genes=["g3", "g1"],
+        genes=["g3", "g1", "g3"],
     )
 
     np.testing.assert_allclose(coords, adata.obsm["spatial"])
-    np.testing.assert_allclose(X, adata.layers["counts"][:, [0, 2]])
-    # _extract_adata keeps AnnData var order, not user-provided order.
-    assert gene_names == ["g1", "g3"]
+    np.testing.assert_allclose(X, adata.layers["counts"][:, [2, 0]])
+    # _extract_adata now preserves user order and drops duplicate requests.
+    assert gene_names == ["g3", "g1"]
 
 
 def test_extract_adata_validates_required_inputs() -> None:
@@ -73,6 +73,16 @@ def test_extract_adata_validates_required_inputs() -> None:
             genes=["not_in_adata"],
         )
 
+    dup = ad.AnnData(X=adata.X.copy(), var=pd.DataFrame(index=["g1", "g1", "g3"]))
+    dup.obsm["spatial"] = adata.obsm["spatial"].copy()
+    with pytest.raises(ValueError, match="var_names must be unique"):
+        _extract_adata(
+            adata=dup,
+            spatial_key="spatial",
+            layer=None,
+            genes=["g1"],
+        )
+
 
 def test_store_result_writes_matching_genes_and_metadata() -> None:
     adata = _make_adata()
@@ -85,6 +95,7 @@ def test_store_result_writes_matching_genes_and_metadata() -> None:
         extra_fields={
             "pvalue_binary": result.pvalues_binary,
             "n_expressed": result.n_expressed,
+            "n_ratio_like_float": np.array([0.2, 0.3, 0.4]),
         },
         metadata={"n_scales": 2},
     )
@@ -95,10 +106,44 @@ def test_store_result_writes_matching_genes_and_metadata() -> None:
     # Unmatched genes keep defaults.
     assert np.isnan(adata.var.loc["g1", "flashs_pvalue"])
     assert adata.var.loc["g1", "flashs_n_expressed"] == 0
+    assert np.isnan(adata.var.loc["g1", "flashs_n_ratio_like_float"])
 
     assert adata.uns["flashs"]["n_tested"] == result.n_tested
     assert adata.uns["flashs"]["n_significant"] == result.n_significant
     assert adata.uns["flashs"]["n_scales"] == 2
+
+
+def test_store_result_validates_extra_field_lengths() -> None:
+    adata = _make_adata()
+    result = _make_result(["g1", "g2", "g3"])
+    with pytest.raises(ValueError, match="does not match result length"):
+        _store_result(
+            adata=adata,
+            result=result,
+            key_added="flashs",
+            extra_fields={"bad_len": np.array([1.0, 2.0])},
+        )
+
+
+def test_store_result_validates_extra_field_shape() -> None:
+    adata = _make_adata()
+    result = _make_result(["g1", "g2", "g3"])
+
+    with pytest.raises(ValueError, match="must be 1D"):
+        _store_result(
+            adata=adata,
+            result=result,
+            key_added="flashs",
+            extra_fields={"scalar": 1.23},
+        )
+
+    with pytest.raises(ValueError, match="must be 1D"):
+        _store_result(
+            adata=adata,
+            result=result,
+            key_added="flashs",
+            extra_fields={"matrix": np.ones((3, 2))},
+        )
 
 
 def test_run_flashs_copy_modes_with_stubbed_model(monkeypatch: pytest.MonkeyPatch) -> None:
