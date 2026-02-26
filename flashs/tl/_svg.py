@@ -28,7 +28,9 @@ def _run_and_store(
     and ``flashs.io.run_flashs``. Returns the full FlashSResult so callers
     that need it (backward-compat ``run_flashs``) don't have to reconstruct.
     """
-    coords, X, gene_names = _extract_adata(adata, spatial_key, layer, genes)
+    coords, X, gene_names, var_indices = _extract_adata(
+        adata, spatial_key, layer, genes,
+    )
 
     model = FlashS(
         n_features=n_features,
@@ -41,6 +43,7 @@ def _run_and_store(
     _store_result(
         adata=adata,
         result=result,
+        var_indices=var_indices,
         key_added=key_added,
         extra_fields={
             "pvalue_binary": result.pvalues_binary,

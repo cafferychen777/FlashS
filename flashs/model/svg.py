@@ -53,15 +53,14 @@ class FlashSResult(SpatialTestResult):
     The primary p-values come from multi-kernel Cauchy combination across
     {binary, rank, direct} tests × L bandwidth scales + projection kernels.
 
-    All arrays are aligned with the input gene order. Genes that were not
-    tested (too few expressing cells) receive pvalues=1.0, statistics=0.0.
-    Use ``tested_mask`` to distinguish tested from untested genes.
+    Scalar arrays (pvalues, qvalues, statistics, effect_size, pvalues_binary,
+    pvalues_rank, n_expressed, tested_mask) are aligned with the input gene
+    order (length ``n_genes``).  Genes that were not tested receive
+    pvalues=1.0, statistics=0.0.
 
-    Extends SpatialTestResult with SVG-specific fields:
-    - Binary/rank p-values (diagnostics)
-    - Expression counts per gene
-    - Boolean mask of actually tested genes
-    - RFF projection vectors for spatial clustering
+    ``projections`` is compact: shape ``(n_tested, D)``, rows correspond
+    to genes where ``tested_mask`` is True, in order.  Access via
+    ``get_spatial_embedding()``.
     """
 
     pvalues_binary: NDArray[np.floating]
@@ -82,12 +81,34 @@ class FlashSResult(SpatialTestResult):
     """
 
     projections: NDArray[np.floating] | None = None
-    """RFF projection vectors (n_genes, D) for spatial clustering.
+    """RFF projection vectors for tested genes only, shape (n_tested, D).
 
-    Each row is a gene's "spatial frequency fingerprint". Genes with similar
-    spatial patterns have high cosine similarity. Use get_spatial_embedding()
-    for L2-normalized projections suitable for clustering.
+    Rows correspond to genes where ``tested_mask`` is True, in the same
+    order.  Use ``get_spatial_embedding()`` to access projections by gene
+    name with optional L2 normalization for clustering.
     """
+
+    def __post_init__(self):
+        super().__post_init__()
+        n_genes = len(self.gene_names)
+        if self.tested_mask is not None:
+            if self.tested_mask.shape != (n_genes,):
+                raise ValueError(
+                    f"tested_mask length ({self.tested_mask.shape[0]}) "
+                    f"!= n_genes ({n_genes})"
+                )
+            mask_count = int(self.tested_mask.sum())
+            if mask_count != self.n_tested:
+                raise ValueError(
+                    f"tested_mask has {mask_count} True entries "
+                    f"but n_tested={self.n_tested}"
+                )
+        if self.projections is not None:
+            if self.projections.shape[0] != self.n_tested:
+                raise ValueError(
+                    f"projections has {self.projections.shape[0]} rows "
+                    f"but n_tested={self.n_tested}"
+                )
 
     def _build_dataframe_dict(self) -> dict:
         """Extend base dict with SVG-specific columns."""
@@ -113,16 +134,16 @@ class FlashSResult(SpatialTestResult):
         Parameters
         ----------
         genes : list[str], optional
-            Genes to include. If None, uses all tested genes.
+            Genes to include. If None, returns all tested genes.
         normalize : bool, default=True
             Whether to L2-normalize (recommended for clustering).
 
         Returns
         -------
-        embedding : ndarray of shape (n_genes, D)
+        embedding : ndarray of shape (n_selected, D)
             Spatial shape embedding.
         """
-        if self.projections is None:
+        if self.projections is None or self.tested_mask is None:
             raise ValueError(
                 "Projections not available. Run FlashS.test() with "
                 "return_projections=True to enable spatial embedding."
@@ -131,8 +152,12 @@ class FlashSResult(SpatialTestResult):
         if genes is None:
             proj = self.projections
         else:
-            name_to_idx = {n: i for i, n in enumerate(self.gene_names)}
-            indices = [name_to_idx[g] for g in genes if g in name_to_idx]
+            # Map gene names to rows in the compact (n_tested, D) matrix
+            tested_names = [
+                g for g, m in zip(self.gene_names, self.tested_mask) if m
+            ]
+            name_to_row = {n: i for i, n in enumerate(tested_names)}
+            indices = [name_to_row[g] for g in genes if g in name_to_row]
             proj = self.projections[indices]
 
         if normalize:
@@ -937,10 +962,10 @@ class FlashS:
         full_effect_sizes[tested_idx] = effect_sizes
         tested_mask[tested_idx] = True
 
-        full_projections = None
+        # Compact projections: (n_tested, D) instead of (n_genes, D)
+        compact_projections = None
         if return_projections:
-            full_projections = np.zeros((n_genes, self._rff.n_features))
-            full_projections[tested_idx] = np.vstack(projections_list)
+            compact_projections = np.vstack(projections_list)
 
         return FlashSResult(
             gene_names=gene_names,
@@ -953,7 +978,7 @@ class FlashS:
             n_expressed=all_n_expressed,
             n_tested=len(input_gene_indices),
             tested_mask=tested_mask,
-            projections=full_projections,
+            projections=compact_projections,
         )
 
     # ------------------------------------------------------------------

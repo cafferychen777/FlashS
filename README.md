@@ -185,7 +185,7 @@ Convenience method combining `fit()` and `test()`.
 | `n_tested` | `int` | Genes tested |
 | `n_significant` | `int` | Significant genes (q < 0.05) |
 | `tested_mask` | `ndarray \| None` | Boolean mask of tested genes |
-| `projections` | `ndarray \| None` | RFF projections (if requested) |
+| `projections` | `ndarray \| None` | RFF projections, shape `(n_tested, D)` (if requested) |
 
 | Method | Description |
 |--------|-------------|

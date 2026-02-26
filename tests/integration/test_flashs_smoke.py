@@ -27,9 +27,8 @@ def test_flashs_return_projections_shape(small_coords, small_sparse_expr, gene_n
         return_projections=True,
     )
 
-    n_genes = small_sparse_expr.shape[1]
     assert result.projections is not None
-    assert result.projections.shape == (n_genes, model._rff.n_features)
+    assert result.projections.shape == (result.n_tested, model._rff.n_features)
 
 
 def test_result_aligned_with_input_gene_order() -> None:

@@ -54,3 +54,32 @@ def test_spectral_fallback_does_not_swallow_interrupts(
     monkeypatch.setattr("flashs.core.bandwidth.lobpcg", _raise_interrupt)
     with pytest.raises(KeyboardInterrupt):
         estimate_bandwidth(coords, method="spectral", random_state=0)
+
+
+def test_estimate_bandwidth_quantile_and_median_paths() -> None:
+    coords = np.random.default_rng(5).random((80, 2))
+    q = estimate_bandwidth(coords, method="quantile", quantiles=[0.2, 0.5, 0.8])
+    assert len(q.multiscale) == 3
+    assert q.primary == q.multiscale[1]
+    assert q.median_distance > 0
+
+    m = estimate_bandwidth(coords, method="median")
+    assert m.primary == pytest.approx(m.median_distance)
+
+
+def test_estimate_bandwidth_handles_collocated_points() -> None:
+    coords = np.zeros((10, 2), dtype=np.float64)
+    out = estimate_bandwidth(coords, method="auto")
+    assert out.primary == 1.0
+    assert out.multiscale == [1.0]
+    assert out.median_distance == 0.0
+
+
+def test_compute_adaptive_scales_linear_and_adaptive_lengths() -> None:
+    coords = np.random.default_rng(6).random((120, 2))
+    linear = compute_adaptive_scales(coords, n_scales=6, coverage="linear")
+    adaptive = compute_adaptive_scales(coords, n_scales=6, coverage="adaptive")
+    assert len(linear) == 6
+    assert len(adaptive) == 6
+    assert linear == sorted(linear)
+    assert adaptive == sorted(adaptive)

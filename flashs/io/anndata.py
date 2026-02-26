@@ -27,7 +27,15 @@ def _extract_adata(
     layer: str | None,
     genes: list[str] | None,
 ):
-    """Extract spatial coordinates, expression, and gene names from AnnData."""
+    """Extract spatial coordinates, expression, gene names, and var indices.
+
+    Returns
+    -------
+    coords, X, gene_names, var_indices
+        ``var_indices`` are positional indices into ``adata.var`` so that
+        results can be written back without relying on (possibly non-unique)
+        gene names.
+    """
     if spatial_key not in adata.obsm:
         raise KeyError(
             f"Spatial coordinates not found at adata.obsm['{spatial_key}']. "
@@ -43,6 +51,7 @@ def _extract_adata(
         X = adata.X
 
     gene_names = list(adata.var_names)
+    var_indices = np.arange(adata.n_vars, dtype=np.intp)
 
     if genes is not None:
         if not adata.var_names.is_unique:
@@ -66,16 +75,17 @@ def _extract_adata(
 
         if not selected_indices:
             raise ValueError("None of the specified genes found in adata")
-        gene_indices = np.asarray(selected_indices, dtype=np.intp)
-        X = X[:, gene_indices]
+        var_indices = np.asarray(selected_indices, dtype=np.intp)
+        X = X[:, var_indices]
         gene_names = selected_names
 
-    return coords, X, gene_names
+    return coords, X, gene_names, var_indices
 
 
 def _store_result(
     adata: "ad.AnnData",
     result: SpatialTestResult,
+    var_indices: NDArray[np.intp],
     key_added: str,
     extra_fields: dict | None = None,
     metadata: dict | None = None,
@@ -89,6 +99,9 @@ def _store_result(
         Target AnnData object.
     result
         Test result to store.
+    var_indices
+        Positional indices into ``adata.var`` (from ``_extract_adata``).
+        Maps result position *i* to ``adata.var`` row ``var_indices[i]``.
     key_added
         Key prefix for columns.
     extra_fields
@@ -96,7 +109,9 @@ def _store_result(
     metadata
         Metadata to store in ``adata.uns[key_added]``.
     """
-    # Initialize base columns with NaN
+    n_result = len(result.gene_names)
+
+    # Initialize columns with defaults
     adata.var[f"{key_added}_pvalue"] = np.nan
     adata.var[f"{key_added}_qvalue"] = np.nan
     adata.var[f"{key_added}_statistic"] = np.nan
@@ -104,17 +119,12 @@ def _store_result(
 
     extra_items: list[tuple[str, np.ndarray]] = []
     if extra_fields:
-        expected_len = len(result.gene_names)
         for col_name, values in extra_fields.items():
             arr = np.asarray(values)
-            if arr.ndim != 1:
+            if arr.ndim != 1 or arr.shape[0] != n_result:
                 raise ValueError(
-                    f"extra_fields['{col_name}'] must be 1D, got shape {arr.shape}"
-                )
-            if arr.shape[0] != expected_len:
-                raise ValueError(
-                    f"extra_fields['{col_name}'] length ({arr.shape[0]}) "
-                    f"does not match result length ({expected_len})"
+                    f"extra_fields['{col_name}'] must be 1D with length "
+                    f"{n_result}, got shape {arr.shape}"
                 )
             extra_items.append((col_name, arr))
             if np.issubdtype(arr.dtype, np.integer) or np.issubdtype(arr.dtype, np.bool_):
@@ -123,32 +133,15 @@ def _store_result(
                 default = np.nan
             adata.var[f"{key_added}_{col_name}"] = default
 
-    # Positional assignment: map result genes to adata.var positions.
-    # Uses iloc-style indexing to handle duplicate var_names correctly.
-    var_name_list = list(adata.var_names)
-    name_to_pos: dict[str, int] = {}
-    for i, name in enumerate(var_name_list):
-        if name not in name_to_pos:
-            name_to_pos[name] = i
+    # Direct positional write — no name-based lookup, handles duplicates correctly
+    pos = var_indices
+    adata.var[f"{key_added}_pvalue"].values[pos] = result.pvalues
+    adata.var[f"{key_added}_qvalue"].values[pos] = result.qvalues
+    adata.var[f"{key_added}_statistic"].values[pos] = result.statistics
+    adata.var[f"{key_added}_effect_size"].values[pos] = result.effect_size
 
-    var_positions: list[int] = []
-    result_indices: list[int] = []
-    for j, gene in enumerate(result.gene_names):
-        pos = name_to_pos.get(gene)
-        if pos is not None:
-            var_positions.append(pos)
-            result_indices.append(j)
-
-    if var_positions:
-        pos = np.array(var_positions)
-        idx = np.array(result_indices)
-        adata.var[f"{key_added}_pvalue"].values[pos] = result.pvalues[idx]
-        adata.var[f"{key_added}_qvalue"].values[pos] = result.qvalues[idx]
-        adata.var[f"{key_added}_statistic"].values[pos] = result.statistics[idx]
-        adata.var[f"{key_added}_effect_size"].values[pos] = result.effect_size[idx]
-
-        for col_name, values in extra_items:
-            adata.var[f"{key_added}_{col_name}"].values[pos] = values[idx]
+    for col_name, values in extra_items:
+        adata.var[f"{key_added}_{col_name}"].values[pos] = values
 
     adata.uns[key_added] = {
         "n_tested": result.n_tested,
