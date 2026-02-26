@@ -41,23 +41,9 @@ io = [
     "anndata>=0.10.9",
     "pandas>=2.3.3",
 ]
-viz = [
-    "matplotlib>=3.9.4",
-    "pandas>=2.3.3",
-    "seaborn>=0.13.2",
-]
-bench = [
-    "anndata>=0.10.9",
-    "matplotlib>=3.9.4",
-    "pandas>=2.3.3",
-    "seaborn>=0.13.2",
-]
 full = [
     "anndata>=0.10.9",
-    "matplotlib>=3.9.4",
     "pandas>=2.3.3",
-    "seaborn>=0.13.2",
-    "numba>=0.55",
 ]
 dev = [
     "pytest>=7.0",

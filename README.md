@@ -15,7 +15,7 @@ Ultra-fast spatially variable gene (SVG) detection for spatial transcriptomics a
 - **Multi-kernel Cauchy combination**: Binary, rank, and direct tests across multiple bandwidth scales
 - **Atlas-scale**: 3.94M cells in 12.6 min, <22 GB RAM on a single node
 - **Memory efficient**: `O(D)` per gene, no `n × n` or `n × D` matrix construction
-- **scverse integration**: Scanpy-style `tl`/`pl` API with AnnData support
+- **scverse integration**: Scanpy-style `tl` API with AnnData support
 
 ## Installation
 
@@ -26,8 +26,7 @@ pip install flashs
 Optional extras:
 
 ```bash
-pip install "flashs[full]"    # AnnData + visualization
-pip install "flashs[io]"      # AnnData only
+pip install "flashs[io]"      # AnnData support
 pip install "flashs[dev]"     # Testing
 ```
 
@@ -43,10 +42,6 @@ flashs.tl.svg(adata)
 
 # Results stored in adata.var and adata.uns
 sig = adata.var.query("flashs_qvalue < 0.05")
-
-# Visualization
-flashs.pl.svg(adata)
-flashs.pl.volcano(adata)
 ```
 
 ### Standalone API
@@ -108,39 +103,6 @@ Detect spatially variable genes. Results are stored in `adata.var` and `adata.un
 | `n_features` | RFF features used |
 | `n_scales` | Number of bandwidth scales |
 | `bandwidths` | Bandwidth values used |
-
-### `flashs.pl` — Plotting
-
-#### `flashs.pl.svg(adata, ...)`
-
-Plot top spatially variable genes on spatial coordinates.
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `adata` | `AnnData` | required | AnnData with Flash-S results |
-| `key` | `str` | `"flashs"` | Key prefix from `tl.svg` |
-| `n_top` | `int` | `6` | Number of top genes to plot |
-| `spot_size` | `float \| None` | `None` | Scatter point size; `None` auto-detects |
-| `ncols` | `int` | `3` | Columns in subplot grid |
-| `cmap` | `str` | `"viridis"` | Colormap |
-| `figsize` | `tuple \| None` | `None` | Figure size; `None` auto-computes |
-| `save` | `str \| None` | `None` | Path to save figure |
-| `show` | `bool` | `True` | Whether to call `plt.show()` |
-
-#### `flashs.pl.volcano(adata, ...)`
-
-Volcano plot (-log10 p-value vs effect size).
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `adata` | `AnnData` | required | AnnData with Flash-S results |
-| `key` | `str` | `"flashs"` | Key prefix |
-| `q_threshold` | `float` | `0.05` | Significance threshold |
-| `effect_threshold` | `float` | `0.0` | Minimum effect size |
-| `n_label` | `int` | `10` | Number of top genes to label |
-| `figsize` | `tuple` | `(5, 4)` | Figure size |
-| `save` | `str \| None` | `None` | Path to save figure |
-| `show` | `bool` | `True` | Whether to call `plt.show()` |
 
 ### `flashs.FlashS` — Core Model
 

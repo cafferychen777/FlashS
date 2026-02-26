@@ -91,19 +91,9 @@ def test_tl_module_alias() -> None:
     assert flashs.tl.svg is flashs.tl.spatial_variable_genes
 
 
-def test_pl_module_alias() -> None:
-    """flashs.pl.svg is an alias for spatial_variable_genes."""
-    import flashs
-
-    assert flashs.pl.svg is flashs.pl.spatial_variable_genes
-
-
 def test_submodule_importable() -> None:
-    """tl and pl are importable as flashs.tl / flashs.pl."""
+    """tl is importable as flashs.tl."""
     import flashs
 
     assert hasattr(flashs, "tl")
-    assert hasattr(flashs, "pl")
     assert hasattr(flashs.tl, "spatial_variable_genes")
-    assert hasattr(flashs.pl, "spatial_variable_genes")
-    assert hasattr(flashs.pl, "volcano")

@@ -30,8 +30,8 @@ __version__ = "0.1.1"
 # Main API
 from .model import FlashS, FlashSResult
 
-# Scanpy-style submodules
-from . import tl, pl
+# Scanpy-style submodule
+from . import tl
 
 # Enum exposed for FlashS(kernel=KernelType.LAPLACIAN)
 from .core.rff import KernelType
@@ -41,7 +41,6 @@ __all__ = [
     "FlashS",
     "FlashSResult",
     "tl",
-    "pl",
     "KernelType",
 ]
 
