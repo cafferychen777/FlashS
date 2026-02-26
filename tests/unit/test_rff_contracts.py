@@ -52,15 +52,10 @@ def test_sample_spectral_frequencies_rejects_unknown_kernel() -> None:
         )
 
 
-def test_rffparams_properties_and_transform() -> None:
+def test_rffparams_properties() -> None:
     omega = np.array([[1.0, 0.0], [0.0, 2.0]], dtype=np.float64)
     bias = np.array([0.0, np.pi / 2], dtype=np.float64)
     params = RFFParams(omega=omega, bias=bias, scale=1.0)
 
     assert params.n_features == 2
     assert params.n_dims == 2
-
-    coords = np.array([[0.0, 0.0], [1.0, 1.0]], dtype=np.float64)
-    got = params.transform(coords)
-    expected = np.cos(coords @ omega.T + bias)
-    np.testing.assert_allclose(got, expected, rtol=1e-12, atol=1e-12)

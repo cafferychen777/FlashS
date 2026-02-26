@@ -133,20 +133,4 @@ class RFFParams:
         """Spatial dimensionality d."""
         return self.omega.shape[1]
 
-    def transform(self, coords: NDArray[np.floating]) -> NDArray[np.float64]:
-        """
-        Transform coordinates to RFF space.
-
-        Parameters
-        ----------
-        coords : ndarray (n, d)
-            Spatial coordinates.
-
-        Returns
-        -------
-        Z : ndarray (n, D)
-            RFF features.
-        """
-        return self.scale * np.cos(coords @ self.omega.T + self.bias)
-
 
