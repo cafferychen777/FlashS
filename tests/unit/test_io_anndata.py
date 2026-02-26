@@ -172,7 +172,7 @@ def test_run_flashs_copy_modes_with_stubbed_model(monkeypatch: pytest.MonkeyPatc
             assert coords.shape[0] == X.shape[0]
             return _make_result(gene_names)
 
-    monkeypatch.setattr("flashs.io.anndata.FlashS", DummyFlashS)
+    monkeypatch.setattr("flashs.tl._svg.FlashS", DummyFlashS)
 
     result = run_flashs(adata, key_added="k", copy=False, n_features=16, n_scales=4)
     assert isinstance(result, FlashSResult)

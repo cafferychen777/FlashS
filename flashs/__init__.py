@@ -18,10 +18,11 @@ Quick Start
 >>> result = FlashS().fit(coords).test(expression_matrix)
 >>> print(result.significant_genes())
 
-With AnnData:
+With AnnData (scanpy-style):
 
->>> from flashs.io import run_flashs
->>> result = run_flashs(adata, spatial_key="spatial")
+>>> import flashs
+>>> flashs.tl.spatial_variable_genes(adata)
+>>> sig = adata.var.query("flashs_qvalue < 0.05")
 """
 
 __version__ = "0.1.1"
@@ -32,6 +33,9 @@ from .model import (
     FlashSResult,
 )
 
+# Scanpy-style submodules
+from . import tl, pl
+
 # Utilities (for advanced users building custom pipelines)
 from .core.pvalue import adjust_pvalues, cauchy_combination
 from .core.rff import KernelType
@@ -41,6 +45,9 @@ __all__ = [
     # Main API
     "FlashS",
     "FlashSResult",
+    # Scanpy-style submodules
+    "tl",
+    "pl",
     # Utilities
     "KernelType",
     "adjust_pvalues",

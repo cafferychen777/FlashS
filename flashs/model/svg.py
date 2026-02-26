@@ -41,6 +41,10 @@ from ..core.sketch import (
 from ..preprocessing.normalize import log1p_transform, normalize_total
 
 
+# ---------------------------------------------------------------------------
+# Result dataclass
+# ---------------------------------------------------------------------------
+
 @dataclass
 class FlashSResult(SpatialTestResult):
     """
@@ -139,36 +143,9 @@ class FlashSResult(SpatialTestResult):
         return proj
 
 
-@dataclass
-class _GeneStats:
-    """Accumulated per-gene statistics from the sketch phase.
-
-    Collects {binary, rank, direct} test statistics across all tested genes
-    for batch p-value computation. Each array has shape (n_tested,) or
-    (n_tested, n_scales).
-    """
-
-    input_indices: list[int]
-    # Global test statistics (n_tested,)
-    T_binary: NDArray[np.float64]
-    T_rank: NDArray[np.float64]
-    scale_binary: NDArray[np.float64]
-    df_binary: NDArray[np.float64]
-    mean_T_binary: NDArray[np.float64]
-    # Kurtosis (n_tested,)
-    kappa4_binary: NDArray[np.float64]
-    kappa4_rank: NDArray[np.float64]
-    kappa4_direct: NDArray[np.float64]
-    # Per-scale (n_tested, n_scales)
-    ps_T_binary: NDArray[np.float64]
-    ps_T_rank: NDArray[np.float64]
-    ps_T_direct: NDArray[np.float64]
-    y_var_binary: NDArray[np.float64]
-    # Projection kernel (n_tested,)
-    T_proj_binary: NDArray[np.float64]
-    T_proj_rank: NDArray[np.float64]
-    T_proj_direct: NDArray[np.float64]
-
+# ---------------------------------------------------------------------------
+# Internal dataclasses for the sketch → infer pipeline
+# ---------------------------------------------------------------------------
 
 @dataclass
 class _NullParams:
@@ -191,7 +168,7 @@ class _NullParams:
 
 @dataclass
 class _PerGeneStats:
-    """Per-gene sketch outputs used for batch p-value computation."""
+    """Per-gene sketch outputs from a single gene."""
 
     T_binary: float
     T_rank: float
@@ -210,6 +187,61 @@ class _PerGeneStats:
     T_proj_direct: float
     rank_projection: NDArray[np.float64] | None
 
+
+@dataclass
+class _GeneStats:
+    """Vectorized per-gene statistics for batch p-value computation.
+
+    Each array has shape (n_tested,) or (n_tested, n_scales).
+    """
+
+    input_indices: list[int]
+    T_binary: NDArray[np.float64]
+    T_rank: NDArray[np.float64]
+    scale_binary: NDArray[np.float64]
+    df_binary: NDArray[np.float64]
+    mean_T_binary: NDArray[np.float64]
+    kappa4_binary: NDArray[np.float64]
+    kappa4_rank: NDArray[np.float64]
+    kappa4_direct: NDArray[np.float64]
+    ps_T_binary: NDArray[np.float64]
+    ps_T_rank: NDArray[np.float64]
+    ps_T_direct: NDArray[np.float64]
+    y_var_binary: NDArray[np.float64]
+    T_proj_binary: NDArray[np.float64]
+    T_proj_rank: NDArray[np.float64]
+    T_proj_direct: NDArray[np.float64]
+
+    @classmethod
+    def from_list(
+        cls,
+        stats: list[_PerGeneStats],
+        input_indices: list[int],
+    ) -> _GeneStats:
+        """Vectorize a list of per-gene stats into batch arrays."""
+        return cls(
+            input_indices=input_indices,
+            T_binary=np.array([s.T_binary for s in stats]),
+            T_rank=np.array([s.T_rank for s in stats]),
+            scale_binary=np.array([s.scale_binary for s in stats]),
+            df_binary=np.array([s.df_binary for s in stats]),
+            mean_T_binary=np.array([s.mean_T_binary for s in stats]),
+            kappa4_binary=np.array([s.kappa4_binary for s in stats]),
+            kappa4_rank=np.array([s.kappa4_rank for s in stats]),
+            kappa4_direct=np.array([s.kappa4_direct for s in stats]),
+            ps_T_binary=np.array([s.ps_T_binary for s in stats]),
+            ps_T_rank=np.array([s.ps_T_rank for s in stats]),
+            ps_T_direct=np.array([s.ps_T_direct for s in stats]),
+            y_var_binary=np.array([s.y_var_binary for s in stats]),
+            T_proj_binary=np.array([s.T_proj_binary for s in stats]),
+            T_proj_rank=np.array([s.T_proj_rank for s in stats]),
+            T_proj_direct=np.array([s.T_proj_direct for s in stats]),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers (pure functions)
+# ---------------------------------------------------------------------------
 
 def _excess_kurtosis_zi(
     values: NDArray[np.float64],
@@ -245,10 +277,36 @@ def _satterthwaite_params(
     safe_mean = np.where(ok, mean_T, 1.0)
     scale = np.where(ok, var_T / (2 * safe_mean), 1.0)
     df = np.where(ok, 2 * safe_mean ** 2 / var_T, fallback_df)
-    # Return scalars when inputs were scalar
     if scale.ndim == 0:
         return float(scale), float(df)
     return scale, df
+
+
+def _safe_chi2_sf(
+    T: NDArray[np.float64],
+    scale: NDArray[np.float64] | float,
+    df: NDArray[np.float64] | float,
+    mean_threshold: NDArray[np.float64] | float | None = None,
+) -> NDArray[np.float64]:
+    """Chi-square survival function with safe guards for near-zero scale.
+
+    When mean_threshold is provided, returns 1.0 (no evidence) for entries
+    where mean_threshold <= 1e-10.
+    """
+    scale = np.asarray(scale)
+    safe_scale = np.where(scale > 1e-10, scale, 1.0)
+    pvals = _chi2_dist.sf(T / safe_scale, df)
+    if mean_threshold is not None:
+        pvals = np.where(np.asarray(mean_threshold) > 1e-10, pvals, 1.0)
+    return pvals
+
+
+# ---------------------------------------------------------------------------
+# Main class
+# ---------------------------------------------------------------------------
+
+_MIN_CELLS_ASYMPTOTIC = 30
+"""Minimum expressing cells for chi-square asymptotic validity (CLT threshold)."""
 
 
 class FlashS:
@@ -324,7 +382,6 @@ class FlashS:
         adjustment: Literal["bh", "bonferroni", "holm", "by", "storey", "none"] = "bh",
         random_state: int | None = 0,
     ):
-        # Validate parameters
         if n_features < 1:
             raise ValueError(f"n_features must be >= 1, got {n_features}")
         if n_scales < 1:
@@ -338,7 +395,6 @@ class FlashS:
             if any(b <= 0 for b in bandwidth):
                 raise ValueError(f"bandwidth values must be > 0, got {bandwidth}")
 
-        # Store parameters (bandwidth already normalized to list[float] | None)
         self.n_features = n_features
         self.n_scales = n_scales
         self.kernel = kernel
@@ -357,6 +413,8 @@ class FlashS:
         self._scale_offsets: NDArray[np.intp]
         self._sum_z: NDArray[np.float64]
         self._z_variances: NDArray[np.float64]
+        self._cov_frob_sq: NDArray[np.float64]
+        self._row_norm4_per_scale: NDArray[np.float64]
         self._coords: NDArray[np.float64]
 
     @property
@@ -365,6 +423,10 @@ class FlashS:
         if not self._fitted:
             raise RuntimeError("Model not fitted yet")
         return self._bandwidths
+
+    # ------------------------------------------------------------------
+    # fit()
+    # ------------------------------------------------------------------
 
     def fit(self, coords: NDArray[np.floating]) -> "FlashS":
         """
@@ -447,32 +509,23 @@ class FlashS:
 
         # Estimate Z column variances via subsampling O(M·D)
         self._z_variances = compute_column_variances(
-            coords,
-            omega_all,
-            bias_all,
-            scale,
-            max_samples=10000,
-            random_state=self.random_state,
+            coords, omega_all, bias_all, scale,
+            max_samples=10000, random_state=self.random_state,
         )
 
         # Compute per-scale ||Cov_z||_F^2 and E[||z_{c,i}||^4] for kurtosis-
-        # corrected Satterthwaite variance. RFF features at large bandwidths
-        # are correlated, so the standard sum(Var(z_k)^2) underestimates the
-        # null variance. The Frobenius correction handles RFF correlation;
-        # the row-norm-4th-power handles non-Gaussian expression (kurtosis).
-        # O(M·D_s²) per scale, O(M·D²/L) total.
+        # corrected Satterthwaite variance. O(M·D_s²) per scale, O(M·D²/L) total.
         self._cov_frob_sq, self._row_norm4_per_scale = compute_cov_frobenius_per_scale(
-            coords,
-            omega_all,
-            bias_all,
-            scale,
-            self._scale_offsets,
-            max_samples=10000,
-            random_state=self.random_state,
+            coords, omega_all, bias_all, scale, self._scale_offsets,
+            max_samples=10000, random_state=self.random_state,
         )
 
         self._fitted = True
         return self
+
+    # ------------------------------------------------------------------
+    # Preprocessing helpers
+    # ------------------------------------------------------------------
 
     def _normalize_expression(
         self,
@@ -481,31 +534,10 @@ class FlashS:
         log_transform: bool = True,
         verbose: bool = False,
     ) -> NDArray[np.floating] | sparse.spmatrix:
-        """
-        Normalize expression data if needed.
-
-        Parameters
-        ----------
-        X : array-like
-            Expression matrix (can be sparse).
-        normalize : bool or "auto"
-            - "auto": Normalize if max > 100 (likely raw counts)
-            - True: Always normalize
-            - False: Never normalize
-        log_transform : bool, default=True
-            Whether to apply log1p transformation.
-        verbose : bool
-            Print normalization info.
-
-        Returns
-        -------
-        X_normalized : array-like
-            Normalized expression matrix.
-        """
+        """Normalize expression data if needed."""
         max_val = self._max_expression_value(X)
         do_normalize = self._resolve_normalize_flag(normalize, max_val)
 
-        # Apply transformations
         X_out = X
 
         if do_normalize:
@@ -598,39 +630,29 @@ class FlashS:
         except np.linalg.LinAlgError:
             return coords_centered, None
 
-    def _build_null_constants(
-        self,
-        n_cells: int,
-    ) -> tuple[
-        float,  # sum_z_var
-        float,  # sum_cov_frob_sq
-        float,  # sum_row_norm4
-        float,  # mean_T_rank_const
-        NDArray[np.float64],  # ps_z_var
-        NDArray[np.float64],  # ps_frob_sq
-        NDArray[np.float64],  # row_norm4
-    ]:
-        """Compute gene-independent null constants from fitted sketch stats."""
-        sum_z_var = float(np.sum(self._z_variances))
-        sum_cov_frob_sq = float(np.sum(self._cov_frob_sq))
-        sum_row_norm4 = float(np.sum(self._row_norm4_per_scale))
-        mean_T_rank_const = n_cells * sum_z_var
+    # ------------------------------------------------------------------
+    # Null distribution
+    # ------------------------------------------------------------------
 
+    def _build_null_params(self, n_cells: int, has_projection: bool) -> _NullParams:
+        """Build gene-independent null distribution parameters from fit() stats."""
         offsets = self._scale_offsets
         n_scales = len(self._bandwidths)
         ps_z_var = np.empty(n_scales, dtype=np.float64)
         for s in range(n_scales):
-            z_s = self._z_variances[offsets[s]:offsets[s + 1]]
-            ps_z_var[s] = np.sum(z_s)
+            ps_z_var[s] = np.sum(self._z_variances[offsets[s]:offsets[s + 1]])
 
-        return (
-            sum_z_var,
-            sum_cov_frob_sq,
-            sum_row_norm4,
-            mean_T_rank_const,
-            ps_z_var,
-            self._cov_frob_sq,
-            self._row_norm4_per_scale,
+        sum_z_var = float(np.sum(self._z_variances))
+        return _NullParams(
+            n_cells=n_cells,
+            n_dims=self._coords.shape[1],
+            mean_T_rank=n_cells * sum_z_var,
+            sum_cov_frob_sq=float(np.sum(self._cov_frob_sq)),
+            sum_row_norm4=float(np.sum(self._row_norm4_per_scale)),
+            ps_z_var=ps_z_var,
+            ps_frob_sq=self._cov_frob_sq,
+            row_norm4=self._row_norm4_per_scale,
+            has_projection=has_projection,
         )
 
     @staticmethod
@@ -653,50 +675,45 @@ class FlashS:
             tested_mask=np.zeros(n_genes, dtype=bool),
         )
 
+    # ------------------------------------------------------------------
+    # Per-gene sketch (called in the gene loop)
+    # ------------------------------------------------------------------
+
     def _compute_gene_stats(
         self,
         row_idx: NDArray[np.intp],
         values: NDArray[np.float64],
-        n_cells: int,
-        coords: NDArray[np.float64],
-        n_dims: int,
-        rff: RFFParams,
-        offsets: NDArray[np.intp],
-        n_scales: int,
-        sum_z_var: float,
-        sum_cov_frob_sq: float,
-        sum_row_norm4: float,
+        null: _NullParams,
         coords_centered: NDArray[np.float64],
         StS_chol: NDArray[np.float64] | None,
         return_projections: bool,
     ) -> _PerGeneStats:
-        """Compute all per-gene sketch statistics for downstream inference."""
+        """Compute all per-gene sketch statistics for downstream inference.
+
+        Loop-invariant state is read from ``self`` (coords, rff, scale_offsets,
+        sum_z) and ``null`` (sum_cov_frob_sq, sum_row_norm4). Only per-gene
+        inputs are passed explicitly.
+        """
+        coords = self._coords
+        rff = self._rff
+        offsets = self._scale_offsets
+        n_cells = null.n_cells
+        n_scales = len(self._bandwidths)
+        n_dims = coords.shape[1]
+
         nnz = len(row_idx)
         ones_values = np.ones(nnz, dtype=np.float64)
         ranks = rankdata(values, method="average").astype(np.float64)
 
+        # --- Fused triple projection: O(nnz·D), evaluate cos() once ---
         coords_nz = coords[row_idx]
-        if n_dims == 2:
-            v_binary_raw, v_rank_raw, v_direct_raw = _project_triple_2d(
-                ones_values,
-                ranks,
-                values,
-                coords_nz,
-                rff.omega,
-                rff.bias,
-                rff.scale,
-            )
-        else:
-            v_binary_raw, v_rank_raw, v_direct_raw = _project_triple(
-                ones_values,
-                ranks,
-                values,
-                coords_nz,
-                rff.omega,
-                rff.bias,
-                rff.scale,
-            )
+        project = _project_triple_2d if n_dims == 2 else _project_triple
+        v_binary_raw, v_rank_raw, v_direct_raw = project(
+            ones_values, ranks, values,
+            coords_nz, rff.omega, rff.bias, rff.scale,
+        )
 
+        # --- Centering correction via precomputed sum_z ---
         mean_binary = nnz / n_cells
         v_binary = v_binary_raw - mean_binary * self._sum_z
 
@@ -706,6 +723,7 @@ class FlashS:
         mean_y = float(np.sum(values)) / n_cells
         v_direct = v_direct_raw - mean_y * self._sum_z
 
+        # --- Standardization ---
         var_rank = float(np.sum(ranks**2)) / n_cells - mean_rank**2
         std_rank = 1.0
         if var_rank > 1e-10:
@@ -718,6 +736,7 @@ class FlashS:
             std_y = float(np.sqrt(var_y))
             v_direct = v_direct / std_y
 
+        # --- Excess kurtosis (for Satterthwaite variance correction) ---
         n_zero = n_cells - nnz
         y_var_binary = mean_binary * (1.0 - mean_binary)
         if y_var_binary > 1e-10:
@@ -727,30 +746,30 @@ class FlashS:
 
         kappa4_rank = (
             _excess_kurtosis_zi(ranks, mean_rank, std_rank, n_zero, n_cells)
-            if var_rank > 1e-10
-            else 0.0
+            if var_rank > 1e-10 else 0.0
         )
         kappa4_direct = (
             _excess_kurtosis_zi(values, mean_y, std_y, n_zero, n_cells)
-            if var_y > 1e-10
-            else 0.0
+            if var_y > 1e-10 else 0.0
         )
 
+        # --- Global test statistics ---
         T_binary = float(np.sum(v_binary**2))
         T_rank = float(np.sum(v_rank**2))
 
+        # Binary Satterthwaite (global, for diagnostic p-value)
+        sum_z_var = null.mean_T_rank / n_cells  # = sum(z_variances)
         mean_T_binary = y_var_binary * n_cells * sum_z_var
         var_T_binary = (
-            2 * y_var_binary**2 * n_cells**2 * sum_cov_frob_sq
-            + kappa4_binary * y_var_binary**2 * n_cells * sum_row_norm4
+            2 * y_var_binary**2 * n_cells**2 * null.sum_cov_frob_sq
+            + kappa4_binary * y_var_binary**2 * n_cells * null.sum_row_norm4
         )
         var_T_binary = max(var_T_binary, 1e-20)
         scale_binary, df_binary = _satterthwaite_params(
-            mean_T_binary,
-            var_T_binary,
-            fallback_df=float(rff.n_features),
+            mean_T_binary, var_T_binary, fallback_df=float(rff.n_features),
         )
 
+        # --- Per-scale test statistics ---
         ps_row_b = np.empty(n_scales)
         ps_row_r = np.empty(n_scales)
         ps_row_d = np.empty(n_scales)
@@ -760,6 +779,7 @@ class FlashS:
             ps_row_r[s] = np.sum(v_rank[sl] ** 2)
             ps_row_d[s] = np.sum(v_direct[sl] ** 2)
 
+        # --- Projection kernel statistics ---
         if StS_chol is not None:
             coords_nz_c = coords_centered[row_idx]
 
@@ -804,6 +824,10 @@ class FlashS:
             rank_projection=v_rank if return_projections else None,
         )
 
+    # ------------------------------------------------------------------
+    # test()
+    # ------------------------------------------------------------------
+
     def test(
         self,
         X: NDArray[np.floating] | sparse.spmatrix,
@@ -818,10 +842,6 @@ class FlashS:
         O(nnz·D + nnz·log nnz): O(nnz·D) for projection and
         O(nnz·log nnz) for rank transformation. No O(N) operations
         are performed per gene.
-        Achieves this by:
-        1. Converting to CSC format for O(1) column access
-        2. Using sparse indices directly (no toarray())
-        3. Centering via precomputed sum_z correction
 
         Parameters
         ----------
@@ -833,8 +853,6 @@ class FlashS:
             Print progress information.
         return_projections : bool, default=False
             If True, store RFF projection vectors in result.projections.
-            These vectors capture each gene's "spatial shape fingerprint"
-            and can be used for clustering genes by spatial pattern.
             Adds O(D) memory per gene.
 
         Returns
@@ -861,148 +879,47 @@ class FlashS:
         # CRITICAL: CSC gives O(1) column start/end access (vs O(N) in CSR)
         X, is_sparse = self._prepare_expression_matrix(X)
 
-        rff = self._rff
-        coords = self._coords
-        n_dims = coords.shape[1]
-        n_features = rff.n_features
-        n_scales = len(self._bandwidths)
-        offsets = self._scale_offsets
-        (
-            sum_z_var,
-            sum_cov_frob_sq,
-            sum_row_norm4,
-            mean_T_rank_const,
-            ps_z_var,
-            ps_frob_sq,
-            row_norm4,
-        ) = self._build_null_constants(n_cells)
-        coords_centered, StS_chol = self._prepare_projection_kernel(coords)
-        has_projection = StS_chol is not None
+        coords_centered, StS_chol = self._prepare_projection_kernel(self._coords)
+        null = self._build_null_params(n_cells, has_projection=StS_chol is not None)
 
-        # Collect statistics for batch p-value computation
-        # Lists for genes that pass filtering
-        input_gene_indices: list[int] = []  # maps tested position → input position
-        all_n_expressed = np.zeros(n_genes, dtype=np.int64)  # for ALL genes
-        T_binary_list: list[float] = []
-        T_rank_list: list[float] = []
-        scale_binary_list: list[float] = []
-        df_binary_list: list[float] = []
-        mean_T_binary_list: list[float] = []
-        projections_list: list[NDArray[np.float64]] = [] if return_projections else None
-
-        # Per-scale statistics (dynamic, converted to arrays after loop)
-        ps_T_binary_list: list[NDArray[np.float64]] = []
-        ps_T_rank_list: list[NDArray[np.float64]] = []
-        ps_T_direct_list: list[NDArray[np.float64]] = []
-        ps_y_var_binary_list: list[float] = []
-
-        # Per-gene excess kurtosis for kurtosis-corrected Satterthwaite
-        kappa4_binary_list: list[float] = []
-        kappa4_rank_list: list[float] = []
-        kappa4_direct_list: list[float] = []
-
-        # Projection kernel statistics
-        T_proj_binary_list: list[float] = []
-        T_proj_rank_list: list[float] = []
-        T_proj_direct_list: list[float] = []
-
-        # Minimum cells for asymptotic chi-square validity (CLT threshold)
-        _MIN_CELLS_ASYMPTOTIC = 30
+        # --- Gene loop: sketch phase ---
         min_cells_test = max(self.min_expressed, _MIN_CELLS_ASYMPTOTIC)
+        all_n_expressed = np.zeros(n_genes, dtype=np.int64)
+        input_gene_indices: list[int] = []
+        per_gene_stats: list[_PerGeneStats] = []
+        projections_list: list[NDArray[np.float64]] = []
 
         for i in range(n_genes):
             if verbose and i % 1000 == 0:
                 print(f"Testing gene {i}/{n_genes}...")
 
             row_idx, values, nnz = self._extract_gene_column(X, is_sparse, i)
-
-            # Skip genes without enough expressing cells for asymptotic validity
             all_n_expressed[i] = nnz
             if nnz < min_cells_test:
                 continue
 
-            gene_stats = self._compute_gene_stats(
-                row_idx=row_idx,
-                values=values,
-                n_cells=n_cells,
-                coords=coords,
-                n_dims=n_dims,
-                rff=rff,
-                offsets=offsets,
-                n_scales=n_scales,
-                sum_z_var=sum_z_var,
-                sum_cov_frob_sq=sum_cov_frob_sq,
-                sum_row_norm4=sum_row_norm4,
-                coords_centered=coords_centered,
-                StS_chol=StS_chol,
-                return_projections=return_projections,
+            gs = self._compute_gene_stats(
+                row_idx, values, null,
+                coords_centered, StS_chol, return_projections,
             )
 
             input_gene_indices.append(i)
-            T_binary_list.append(gene_stats.T_binary)
-            T_rank_list.append(gene_stats.T_rank)
-            scale_binary_list.append(gene_stats.scale_binary)
-            df_binary_list.append(gene_stats.df_binary)
-            mean_T_binary_list.append(gene_stats.mean_T_binary)
-            ps_T_binary_list.append(gene_stats.ps_T_binary)
-            ps_T_rank_list.append(gene_stats.ps_T_rank)
-            ps_T_direct_list.append(gene_stats.ps_T_direct)
-            ps_y_var_binary_list.append(gene_stats.y_var_binary)
-            kappa4_binary_list.append(gene_stats.kappa4_binary)
-            kappa4_rank_list.append(gene_stats.kappa4_rank)
-            kappa4_direct_list.append(gene_stats.kappa4_direct)
-            T_proj_binary_list.append(gene_stats.T_proj_binary)
-            T_proj_rank_list.append(gene_stats.T_proj_rank)
-            T_proj_direct_list.append(gene_stats.T_proj_direct)
-            if return_projections and projections_list is not None:
-                if gene_stats.rank_projection is None:
-                    raise RuntimeError(
-                        "Internal error: missing rank projection with "
-                        "return_projections=True"
-                    )
-                projections_list.append(gene_stats.rank_projection)
+            per_gene_stats.append(gs)
+            if return_projections:
+                projections_list.append(gs.rank_projection)
 
-        if len(input_gene_indices) == 0:
+        if not input_gene_indices:
             return self._empty_result(n_genes, gene_names, all_n_expressed)
 
-        # === Batch p-value computation (sketch → infer) ===
-        gs = _GeneStats(
-            input_indices=input_gene_indices,
-            T_binary=np.array(T_binary_list),
-            T_rank=np.array(T_rank_list),
-            scale_binary=np.array(scale_binary_list),
-            df_binary=np.array(df_binary_list),
-            mean_T_binary=np.array(mean_T_binary_list),
-            kappa4_binary=np.array(kappa4_binary_list),
-            kappa4_rank=np.array(kappa4_rank_list),
-            kappa4_direct=np.array(kappa4_direct_list),
-            ps_T_binary=np.array(ps_T_binary_list),
-            ps_T_rank=np.array(ps_T_rank_list),
-            ps_T_direct=np.array(ps_T_direct_list),
-            y_var_binary=np.array(ps_y_var_binary_list),
-            T_proj_binary=np.array(T_proj_binary_list),
-            T_proj_rank=np.array(T_proj_rank_list),
-            T_proj_direct=np.array(T_proj_direct_list),
-        )
-        null = _NullParams(
-            n_cells=n_cells,
-            n_dims=coords.shape[1],
-            mean_T_rank=mean_T_rank_const,
-            sum_cov_frob_sq=sum_cov_frob_sq,
-            sum_row_norm4=sum_row_norm4,
-            ps_z_var=ps_z_var,
-            ps_frob_sq=ps_frob_sq,
-            row_norm4=row_norm4,
-            has_projection=has_projection,
-        )
+        # --- Batch inference: statistics → p-values ---
+        batch_gs = _GeneStats.from_list(per_gene_stats, input_gene_indices)
         pvalues, pvalues_binary, pvalues_rank, statistics, effect_sizes = (
-            self._compute_kernel_pvalues(gs, null)
+            self._compute_kernel_pvalues(batch_gs, null)
         )
 
-        # FDR correction on tested genes only
         qvalues_tested = adjust_pvalues(pvalues, method=self.adjustment)
 
-        # Scatter tested results into full input-aligned arrays
+        # --- Scatter tested results into full input-aligned arrays ---
         tested_idx = np.array(input_gene_indices)
         full_pvalues = np.ones(n_genes)
         full_qvalues = np.ones(n_genes)
@@ -1020,12 +937,9 @@ class FlashS:
         full_effect_sizes[tested_idx] = effect_sizes
         tested_mask[tested_idx] = True
 
-        # Build projection matrix if requested
         full_projections = None
         if return_projections:
-            if projections_list is None:
-                raise RuntimeError("Internal error: projection list not initialized")
-            full_projections = np.zeros((n_genes, n_features))
+            full_projections = np.zeros((n_genes, self._rff.n_features))
             full_projections[tested_idx] = np.vstack(projections_list)
 
         return FlashSResult(
@@ -1042,6 +956,10 @@ class FlashS:
             projections=full_projections,
         )
 
+    # ------------------------------------------------------------------
+    # Batch p-value computation (pure function)
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _compute_kernel_pvalues(
         gs: _GeneStats,
@@ -1056,28 +974,23 @@ class FlashS:
         """Batch p-value computation: statistics → p-values via Satterthwaite + Cauchy.
 
         Pure function: maps accumulated per-gene statistics to final p-values.
-        Three kernel families are combined:
-        1. Per-scale RFF kernels: {binary, rank, direct} × L active scales
-        2. Projection kernels: {binary, rank, direct} linear gradient tests
-        All are merged via Cauchy combination into a single combined p-value.
+        Combines {binary, rank, direct} × L active scales + projection kernels
+        via Cauchy combination.
         """
         n_tested = len(gs.T_binary)
         n_scales = gs.ps_T_binary.shape[1]
         N = null.n_cells
 
         # --- Global binary p-values (diagnostic) ---
-        pvalues_binary = _chi2_dist.sf(gs.T_binary / gs.scale_binary, gs.df_binary)
+        pvalues_binary = _safe_chi2_sf(gs.T_binary, gs.scale_binary, gs.df_binary)
         pvalues_binary = np.clip(pvalues_binary, np.finfo(float).tiny, 1.0)
 
         # --- Global rank p-values (diagnostic) ---
         var_T_rank_all = (2 * N ** 2 * null.sum_cov_frob_sq
                           + gs.kappa4_rank * N * null.sum_row_norm4)
         scale_rank, df_rank = _satterthwaite_params(null.mean_T_rank, var_T_rank_all)
-        safe_scale_rank = np.where(np.asarray(scale_rank) > 1e-10, scale_rank, 1.0)
-        pvalues_rank = np.where(
-            null.mean_T_rank > 1e-10,
-            _chi2_dist.sf(gs.T_rank / safe_scale_rank, df_rank),
-            1.0,
+        pvalues_rank = _safe_chi2_sf(
+            gs.T_rank, scale_rank, df_rank, mean_threshold=null.mean_T_rank,
         )
         pvalues_rank = np.clip(pvalues_rank, np.finfo(float).tiny, 1.0)
 
@@ -1093,13 +1006,9 @@ class FlashS:
             var_T_b_s = (2 * gs.y_var_binary ** 2 * N ** 2 * null.ps_frob_sq[s]
                          + gs.kappa4_binary * gs.y_var_binary ** 2 * N * null.row_norm4[s])
             sc_b, df_b = _satterthwaite_params(mean_T_b_s, var_T_b_s)
-            safe_sc_b = np.where(sc_b > 1e-10, sc_b, 1.0)
-            scaled_T_b = np.where(
-                np.asarray(mean_T_b_s) > 1e-10,
-                gs.ps_T_binary[:, s] / safe_sc_b,
-                0.0,
+            all_pvals[:, ki] = _safe_chi2_sf(
+                gs.ps_T_binary[:, s], sc_b, df_b, mean_threshold=mean_T_b_s,
             )
-            all_pvals[:, ki] = _chi2_dist.sf(scaled_T_b, df_b)
 
             # Rank + Direct: same E[T] (unit-variance standardized)
             mean_T_r_s = N * null.ps_z_var[s]
@@ -1107,17 +1016,15 @@ class FlashS:
                 var_T_r_s = (2 * N ** 2 * null.ps_frob_sq[s]
                              + gs.kappa4_rank * N * null.row_norm4[s])
                 sc_r, df_r = _satterthwaite_params(mean_T_r_s, var_T_r_s)
-                safe_sc_r = np.where(np.asarray(sc_r) > 1e-10, sc_r, 1.0)
-                all_pvals[:, n_active + ki] = _chi2_dist.sf(
-                    gs.ps_T_rank[:, s] / safe_sc_r, df_r
+                all_pvals[:, n_active + ki] = _safe_chi2_sf(
+                    gs.ps_T_rank[:, s], sc_r, df_r,
                 )
 
                 var_T_d_s = (2 * N ** 2 * null.ps_frob_sq[s]
                              + gs.kappa4_direct * N * null.row_norm4[s])
                 sc_d, df_d = _satterthwaite_params(mean_T_r_s, var_T_d_s)
-                safe_sc_d = np.where(np.asarray(sc_d) > 1e-10, sc_d, 1.0)
-                all_pvals[:, 2 * n_active + ki] = _chi2_dist.sf(
-                    gs.ps_T_direct[:, s] / safe_sc_d, df_d
+                all_pvals[:, 2 * n_active + ki] = _safe_chi2_sf(
+                    gs.ps_T_direct[:, s], sc_d, df_d,
                 )
 
         # --- Projection kernel p-values ---
@@ -1146,6 +1053,10 @@ class FlashS:
         effect_sizes = np.maximum(eff_binary, eff_rank)
 
         return combined_pvalues, pvalues_binary, pvalues_rank, statistics, effect_sizes
+
+    # ------------------------------------------------------------------
+    # Convenience
+    # ------------------------------------------------------------------
 
     def fit_test(
         self,
