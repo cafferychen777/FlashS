@@ -28,30 +28,21 @@ With AnnData (scanpy-style):
 __version__ = "0.1.1"
 
 # Main API
-from .model import (
-    FlashS,
-    FlashSResult,
-)
+from .model import FlashS, FlashSResult
 
 # Scanpy-style submodules
 from . import tl, pl
 
-# Utilities (for advanced users building custom pipelines)
-from .core.pvalue import adjust_pvalues, cauchy_combination
+# Enum exposed for FlashS(kernel=KernelType.LAPLACIAN)
 from .core.rff import KernelType
 
 __all__ = [
     "__version__",
-    # Main API
     "FlashS",
     "FlashSResult",
-    # Scanpy-style submodules
     "tl",
     "pl",
-    # Utilities
     "KernelType",
-    "adjust_pvalues",
-    "cauchy_combination",
 ]
 
 
