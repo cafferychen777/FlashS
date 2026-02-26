@@ -21,7 +21,7 @@ Quick Start
 With AnnData (scanpy-style):
 
 >>> import flashs
->>> flashs.tl.spatial_variable_genes(adata)
+>>> flashs.tl.svg(adata)
 >>> sig = adata.var.query("flashs_qvalue < 0.05")
 """
 

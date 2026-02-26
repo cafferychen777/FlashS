@@ -39,13 +39,13 @@ pip install "flashs[dev]"     # Testing
 import flashs
 
 # adata: AnnData with spatial coordinates in adata.obsm["spatial"]
-flashs.tl.spatial_variable_genes(adata)
+flashs.tl.svg(adata)
 
 # Results stored in adata.var and adata.uns
 sig = adata.var.query("flashs_qvalue < 0.05")
 
 # Visualization
-flashs.pl.spatial_variable_genes(adata)
+flashs.pl.svg(adata)
 flashs.pl.volcano(adata)
 ```
 
@@ -69,7 +69,7 @@ print(result.to_dataframe().head())
 
 ### `flashs.tl` — Tools
 
-#### `flashs.tl.spatial_variable_genes(adata, ...)`
+#### `flashs.tl.svg(adata, ...)`
 
 Detect spatially variable genes. Results are stored in `adata.var` and `adata.uns`.
 
@@ -111,14 +111,14 @@ Detect spatially variable genes. Results are stored in `adata.var` and `adata.un
 
 ### `flashs.pl` — Plotting
 
-#### `flashs.pl.spatial_variable_genes(adata, ...)`
+#### `flashs.pl.svg(adata, ...)`
 
 Plot top spatially variable genes on spatial coordinates.
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `adata` | `AnnData` | required | AnnData with Flash-S results |
-| `key` | `str` | `"flashs"` | Key prefix from `tl.spatial_variable_genes` |
+| `key` | `str` | `"flashs"` | Key prefix from `tl.svg` |
 | `n_top` | `int` | `6` | Number of top genes to plot |
 | `spot_size` | `float \| None` | `None` | Scatter point size; `None` auto-detects |
 | `ncols` | `int` | `3` | Columns in subplot grid |
