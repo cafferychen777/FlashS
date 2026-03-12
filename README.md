@@ -5,16 +5,21 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/pypi/pyversions/flashs)](https://pypi.org/project/flashs/)
 
-**F**requency-domain **L**inearized **A**daptive **S**patial **H**ypothesis testing via **S**ketching
+**Spatially variable gene detection via frequency-domain kernel testing.**
 
-Frequency-domain kernel testing for spatially variable gene (SVG) detection in sparse spatial transcriptomics.
+FlashS detects spatially variable genes (SVGs) in spatial transcriptomics data. It reformulates multi-scale Gaussian kernel testing in the frequency domain, where expression sparsity accelerates computation rather than complicating it.
 
-## Highlights
+## Why FlashS
 
-- **Sparse-aware computation**: `O(nnz · D)` per gene with `O(D)` per-gene memory; no dense `n × n` kernel matrix
-- **Robust evidence aggregation**: Binary, rank, and direct tests combined across adaptive kernel scales
-- **Atlas-scale practicality**: Benchmarked on 3.94M cells in 12.6 min using 21.5 GB RAM
-- **AnnData-native workflow**: Scanpy-style `tl` API plus a standalone model interface
+SVG detection methods face a fundamental trade-off: expressive kernels (Gaussian, Matérn) can detect arbitrary spatial patterns — gradients, hotspots, domain boundaries — but require O(n²) distance or covariance matrices. Scalable alternatives gain speed by restricting what they can find: low-rank periodic projections, fixed polynomial bases, or nearest-neighbor approximations.
+
+FlashS resolves this by moving the test into the frequency domain. By Bochner's theorem, Gaussian kernel evaluations decompose into inner products over Random Fourier Features, eliminating the need for any n × n matrix. Three consequences follow directly:
+
+- **Expression sparsity helps rather than hurts.** Projections touch only non-zero entries. The 80–95% zeros typical of spatial transcriptomics make computation faster, not slower.
+- **Multiple spatial scales are captured in one pass.** Tissue-wide gradients and cell-neighborhood patterns correspond to different frequency bands, all evaluated simultaneously without separate model fits.
+- **The Gaussian kernel becomes practical at any scale.** Its universal approximation capacity — the ability to detect any spatially structured pattern — is no longer gated by quadratic cost.
+
+A three-part test (binary presence, rank intensity, raw count) handles zero-inflation by decomposing spatial signal into complementary channels, and a kurtosis-corrected null distribution provides calibrated p-values without permutation.
 
 ## Installation
 
@@ -22,104 +27,65 @@ Frequency-domain kernel testing for spatially variable gene (SVG) detection in s
 pip install flashs
 ```
 
-Optional extras:
+With AnnData support:
 
 ```bash
-pip install "flashs[io]"      # AnnData support
-pip install "flashs[dev]"     # Testing
+pip install "flashs[io]"
 ```
 
-## Quick Start
-
-### Scanpy-style API (recommended)
+## Quick start
 
 ```python
+# Scanpy-style: results stored in adata.var
 import flashs
 
-# adata: AnnData with spatial coordinates in adata.obsm["spatial"]
 flashs.tl.svg(adata)
-
-# Results stored in adata.var and adata.uns
 sig = adata.var.query("flashs_qvalue < 0.05")
 ```
 
-### Standalone API
-
 ```python
-import numpy as np
-from scipy import sparse
+# Standalone
 from flashs import FlashS
 
-coords = np.random.randn(50000, 2)
-X = sparse.random(50000, 1000, density=0.03, format="csc")
-
-result = FlashS().fit_test(coords, X)
-
-print(result.significant_genes())
-print(result.to_dataframe().head())
+result = FlashS().fit_test(coords, expression_matrix)
+result.to_dataframe()
 ```
 
-## Core API
+See the [quickstart notebook](examples/quickstart.ipynb) for a complete walkthrough.
 
-### AnnData workflow
+## Benchmark
 
-`flashs.tl.svg(adata, spatial_key="spatial", layer=None, genes=None, n_features=500, n_scales=7, min_expressed=5, key_added="flashs", copy=False, random_state=0)`
+On the [Open Problems SVG benchmark](https://openproblems.bio/results/spatially_variable_genes/) (50 datasets across 9 spatial transcriptomics platforms), FlashS achieves a mean Kendall τ of 0.935, exceeding the next-best method (SPARK-X, τ = 0.886) by Δτ = 0.049.
 
-This is the recommended entry point for Scanpy and scverse users. It stores per-gene results in `adata.var` and run metadata in `adata.uns[key_added]`.
+On the Allen Brain MERFISH atlas (3.94 million cells, 550 genes), FlashS completes in 12.6 minutes using 21.5 GB memory while maintaining near-nominal false-positive rates under permutation.
 
-Key outputs in `adata.var`:
+The benchmark snapshot and method implementations are available in the [Open Problems SVG fork](https://github.com/cafferychen777/task_spatially_variable_genes/tree/flashs-benchmark-v1) at tag `flashs-benchmark-v1`.
 
-- `{key}_pvalue`
-- `{key}_qvalue`
-- `{key}_statistic`
-- `{key}_effect_size`
-- `{key}_pvalue_binary`
-- `{key}_pvalue_rank`
-- `{key}_n_expressed`
+## API
 
-### Standalone workflow
+**`flashs.tl.svg(adata)`** — Scanpy-style entry point. Stores p-values, q-values, effect sizes, and per-channel statistics in `adata.var`.
 
-`FlashS(...).fit_test(coords, X, gene_names=None, return_projections=False) -> FlashSResult`
-
-Use the standalone interface when you work outside AnnData. The returned `FlashSResult` provides:
-
-- `significant_genes(...)` to extract discoveries
-- `to_dataframe()` to inspect ranked results
-- `get_spatial_embedding(...)` to access projection-based embeddings when `return_projections=True`
+**`FlashS().fit_test(coords, X)`** — Standalone interface returning a `FlashSResult` with `.significant_genes()`, `.to_dataframe()`, and `.get_spatial_embedding()`.
 
 ## Method
 
-FlashS approximates multi-scale spatial kernels with Random Fourier Features, computes sparse sketches from non-zero entries only, and evaluates binary, rank, and direct expression patterns across scales. Analytic p-value approximations and Cauchy combination avoid dense kernel operations while keeping inference tractable on large sparse datasets.
+FlashS approximates multi-scale Gaussian kernels via Random Fourier Features, projects each gene's expression onto the spectral space through sparse sketching, and combines evidence across scales and test channels via the Cauchy combination rule. Analytic p-values are computed from a kurtosis-corrected scaled chi-squared null without permutation.
 
-See [docs/methods.md](docs/methods.md) for full mathematical details.
-
-## Benchmarks
-
-In our evaluation on the [Open Problems SVG benchmark](https://openproblems.bio/results/spatially_variable_genes/), FlashS achieved a mean Kendall tau of 0.935 across 50 datasets.
-
-FlashS is intended for settings where informative gene ranking, calibrated inference, and sparse-data scalability all matter.
-
-The public benchmark snapshot used for manuscript comparisons is available in the
-[Open Problems SVG fork](https://github.com/cafferychen777/task_spatially_variable_genes/tree/flashs-benchmark-v1)
-at tag [`flashs-benchmark-v1`](https://github.com/cafferychen777/task_spatially_variable_genes/tree/flashs-benchmark-v1).
-The FlashS method entry is
-[here](https://github.com/cafferychen777/task_spatially_variable_genes/tree/flashs-benchmark-v1/src/methods/flashs),
-and the combined public snapshot includes the additional comparison methods
-PreTSA, Hotspot, and scBSP.
+See [docs/methods.md](docs/methods.md) for the full mathematical formulation.
 
 ## Citation
 
 ```bibtex
 @article{yang2026flashs,
-  title={Frequency-domain kernels enable atlas-scale detection of
-         spatially variable genes},
-  author={Yang, Chen and Zhang, Xianyang and Chen, Jun},
-  year={2026},
-  journal={Manuscript submitted},
-  url={https://github.com/cafferychen777/FlashS}
+  title   = {Frequency-domain kernels enable atlas-scale detection of
+             spatially variable genes},
+  author  = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
+  year    = {2026},
+  journal = {bioRxiv},
+  url     = {https://github.com/cafferychen777/FlashS}
 }
 ```
 
 ## License
 
-MIT License
+MIT
