@@ -171,5 +171,5 @@ N = cells, D = 500 (default), L = 7 (default), M = 10,000 (subsampling), G = gen
 
 - Rahimi & Recht (2007). Random Features for Large-Scale Kernel Machines. NeurIPS.
 - Liu & Xie (2020). Cauchy Combination Test. JASA.
-- Zhu, Shang & Li (2021). SPARK-X. Genome Biology.
+- Zhu, Sun & Zhou (2021). SPARK-X. Genome Biology.
 - Satterthwaite (1946). Approximate Distribution of Estimates of Variance Components. Biometrics Bulletin.
