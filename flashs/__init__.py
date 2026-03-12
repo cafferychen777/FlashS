@@ -42,11 +42,3 @@ __all__ = [
     "tl",
     "KernelType",
 ]
-
-
-def __getattr__(name: str):
-    """Lazy import for optional AnnData integration."""
-    if name == "run_flashs":
-        from .io import run_flashs
-        return run_flashs
-    raise AttributeError(f"module 'flashs' has no attribute '{name}'")

@@ -25,19 +25,13 @@ coords = adata.obsm['spatial']
 X = adata.layers['counts']
 
 # Use raw counts with multi-kernel Cauchy combination.
-# adjustment='none' because ranking relies on the composite score.
 model = FlashS(adjustment='none', random_state=42)
 
 result = model.fit_test(coords, X, gene_names=list(adata.var_names))
 
-# Score: effect_size + multi-kernel Cauchy combined p-value
+# Use effect size as the default ranking output.
 # result arrays are aligned with input gene order (adata.var_names)
-es = result.effect_size
-logp_multi = -np.log10(np.clip(result.pvalues, 1e-300, 1))
-
-es_norm = (es - es.min()) / (es.max() - es.min() + 1e-10)
-multi_norm = (logp_multi - logp_multi.min()) / (logp_multi.max() - logp_multi.min() + 1e-10)
-scores = es_norm + multi_norm
+scores = result.effect_size
 
 df = pd.DataFrame({
     'feature_id': list(adata.var_names),

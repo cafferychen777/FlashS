@@ -5,8 +5,6 @@ import builtins
 import numpy as np
 import pytest
 
-import flashs
-from flashs.io import run_flashs as io_run_flashs
 from flashs.model.svg import FlashSResult
 
 
@@ -80,12 +78,6 @@ def test_spatial_embedding_behaviors() -> None:
 
     with pytest.raises(ValueError, match="Projections not available"):
         _make_result(with_projections=False).get_spatial_embedding()
-
-
-def test_flashs_lazy_run_flashs_export_and_missing_attr() -> None:
-    assert flashs.run_flashs is io_run_flashs
-    with pytest.raises(AttributeError, match="has no attribute"):
-        getattr(flashs, "not_a_real_attr")
 
 
 def test_result_invariants_reject_inconsistent_tested_mask_length() -> None:

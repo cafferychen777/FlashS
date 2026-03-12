@@ -3,8 +3,7 @@ AnnData integration for Flash-S.
 
 Provides:
 - ``_extract_adata``: extract coords/expression/gene_names from AnnData
-- ``_store_result``: write SpatialTestResult into adata.var / adata.uns
-- ``run_flashs``: convenience wrapper (delegates to ``flashs.tl``)
+- ``_store_result``: write FlashSResult into adata.var / adata.uns
 """
 
 from __future__ import annotations
@@ -12,8 +11,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
-
-from ..core.result import SpatialTestResult
 
 if TYPE_CHECKING:
     import anndata as ad
@@ -84,8 +81,8 @@ def _extract_adata(
 
 def _store_result(
     adata: "ad.AnnData",
-    result: SpatialTestResult,
-    var_indices: NDArray[np.intp],
+    result: "FlashSResult",
+    var_indices: np.ndarray,
     key_added: str,
     extra_fields: dict | None = None,
     metadata: dict | None = None,
@@ -150,39 +147,3 @@ def _store_result(
     }
 
 
-def run_flashs(
-    adata: "ad.AnnData",
-    spatial_key: str = "spatial",
-    layer: str | None = None,
-    genes: list[str] | None = None,
-    n_features: int = 500,
-    n_scales: int = 7,
-    min_expressed: int = 5,
-    copy: bool = False,
-    key_added: str = "flashs",
-    random_state: int | None = 0,
-) -> "FlashSResult | ad.AnnData":
-    """
-    Run Flash-S spatial test on AnnData object.
-
-    Convenience wrapper around :func:`flashs.tl.spatial_variable_genes`.
-    Delegates all work to the scanpy-style API; exists for backward
-    compatibility.
-
-    Returns
-    -------
-    result : FlashSResult or AnnData
-        ``FlashSResult`` if ``copy=False`` (results also stored in adata.var).
-        Modified AnnData copy if ``copy=True``.
-    """
-    from ..tl._svg import _run_and_store
-
-    if copy:
-        adata = adata.copy()
-
-    result = _run_and_store(
-        adata, spatial_key, layer, genes,
-        n_features, n_scales, min_expressed, key_added, random_state,
-    )
-
-    return adata if copy else result

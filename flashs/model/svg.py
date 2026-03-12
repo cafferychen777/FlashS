@@ -13,7 +13,7 @@ Complexity:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 import numpy as np
@@ -28,7 +28,6 @@ from ..core.pvalue import (
     adjust_pvalues,
     batch_cauchy_combination,
 )
-from ..core.result import SpatialTestResult
 from ..core.rff import KernelType, RFFParams, sample_spectral_frequencies
 from ..core.sketch import (
     _project_triple,
@@ -37,7 +36,42 @@ from ..core.sketch import (
     compute_cov_frobenius_per_scale,
     compute_sum_z,
 )
-from ..preprocessing.normalize import log1p_transform, normalize_total
+
+
+# ---------------------------------------------------------------------------
+# Preprocessing (used only when normalize=True or log_transform=True)
+# ---------------------------------------------------------------------------
+
+def _normalize_total(
+    X: NDArray[np.floating] | sparse.spmatrix,
+    target_sum: float | None = None,
+) -> NDArray[np.floating] | sparse.spmatrix:
+    """Normalize each cell to have the same total counts."""
+    is_sparse = sparse.issparse(X)
+    totals = np.asarray(X.sum(axis=1)).ravel() if is_sparse else X.sum(axis=1)
+
+    if target_sum is None:
+        nonzero_totals = totals[totals > 0]
+        if len(nonzero_totals) == 0:
+            return X.copy()
+        target_sum = float(np.median(nonzero_totals))
+
+    scale_factors = target_sum / np.maximum(totals, 1e-10)
+
+    if is_sparse:
+        return X.multiply(scale_factors[:, np.newaxis])
+    return X * scale_factors[:, np.newaxis]
+
+
+def _log1p_transform(
+    X: NDArray[np.floating] | sparse.spmatrix,
+) -> NDArray[np.floating] | sparse.spmatrix:
+    """Apply log(1 + x) transformation."""
+    if sparse.issparse(X):
+        X_log = X.copy()
+        X_log.data = np.log1p(X_log.data)
+        return X_log
+    return np.log1p(X)
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +79,7 @@ from ..preprocessing.normalize import log1p_transform, normalize_total
 # ---------------------------------------------------------------------------
 
 @dataclass
-class FlashSResult(SpatialTestResult):
+class FlashSResult:
     """
     Results from Flash-S spatial variable gene test.
 
@@ -61,6 +95,24 @@ class FlashSResult(SpatialTestResult):
     to genes where ``tested_mask`` is True, in order.  Access via
     ``get_spatial_embedding()``.
     """
+
+    gene_names: list[str]
+    """Gene names, aligned with input order."""
+
+    pvalues: NDArray[np.floating]
+    """Raw p-values."""
+
+    qvalues: NDArray[np.floating]
+    """Multiple testing corrected q-values (FDR)."""
+
+    statistics: NDArray[np.floating]
+    """Test statistics."""
+
+    effect_size: NDArray[np.floating]
+    """Effect size measure (observed / expected statistic ratio)."""
+
+    n_tested: int
+    """Number of genes tested."""
 
     pvalues_binary: NDArray[np.floating]
     """P-values from binary (presence/absence) pattern test (diagnostic)."""
@@ -87,8 +139,11 @@ class FlashSResult(SpatialTestResult):
     name with optional L2 normalization for clustering.
     """
 
+    n_significant: int = field(init=False)
+    """Number of significant genes (q < 0.05)."""
+
     def __post_init__(self):
-        super().__post_init__()
+        self.n_significant = int(np.sum(self.qvalues < 0.05))
         n_genes = len(self.gene_names)
         if self.tested_mask is not None:
             if self.tested_mask.shape != (n_genes,):
@@ -109,15 +164,34 @@ class FlashSResult(SpatialTestResult):
                     f"but n_tested={self.n_tested}"
                 )
 
-    def _build_dataframe_dict(self) -> dict:
-        """Extend base dict with SVG-specific columns."""
-        d = super()._build_dataframe_dict()
-        d.update({
+    def significant_genes(
+        self,
+        q_threshold: float = 0.05,
+        effect_threshold: float | None = None,
+    ) -> list[str]:
+        """Get list of significant genes."""
+        mask = self.qvalues < q_threshold
+        if effect_threshold is not None:
+            mask = mask & (self.effect_size > effect_threshold)
+        return [g for g, m in zip(self.gene_names, mask) if m]
+
+    def to_dataframe(self):
+        """Convert results to pandas DataFrame sorted by p-value."""
+        try:
+            import pandas as pd
+        except ImportError:
+            raise ImportError("pandas required for to_dataframe()")
+
+        return pd.DataFrame({
+            "gene": self.gene_names,
+            "pvalue": self.pvalues,
+            "qvalue": self.qvalues,
+            "statistic": self.statistics,
+            "effect_size": self.effect_size,
             "pvalue_binary": self.pvalues_binary,
             "pvalue_rank": self.pvalues_rank,
             "n_expressed": self.n_expressed,
-        })
-        return d
+        }).sort_values("pvalue")
 
     def get_spatial_embedding(
         self,
@@ -567,10 +641,10 @@ class FlashS:
         if do_normalize:
             if verbose:
                 print(f"Normalizing expression data (max value: {max_val:.0f})...")
-            X_out = normalize_total(X_out, target_sum=1e4)
+            X_out = _normalize_total(X_out, target_sum=1e4)
 
         if log_transform:
-            X_out = log1p_transform(X_out)
+            X_out = _log1p_transform(X_out)
 
         if verbose and (do_normalize or log_transform):
             if sparse.issparse(X_out):

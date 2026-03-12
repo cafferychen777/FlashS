@@ -22,12 +22,7 @@ def _run_and_store(
     key_added: str,
     random_state: int | None,
 ) -> FlashSResult:
-    """Run FlashS on *adata* and store results in adata.var / adata.uns.
-
-    Single source of truth for both ``flashs.tl.spatial_variable_genes``
-    and ``flashs.io.run_flashs``. Returns the full FlashSResult so callers
-    that need it (backward-compat ``run_flashs``) don't have to reconstruct.
-    """
+    """Run FlashS on *adata* and store results in adata.var / adata.uns."""
     coords, X, gene_names, var_indices = _extract_adata(
         adata, spatial_key, layer, genes,
     )

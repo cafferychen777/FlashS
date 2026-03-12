@@ -6,7 +6,7 @@ import pytest
 ad = pytest.importorskip("anndata")
 pd = pytest.importorskip("pandas")
 
-from flashs.io.anndata import _extract_adata, _store_result, run_flashs
+from flashs.io.anndata import _extract_adata, _store_result
 from flashs.model.svg import FlashSResult
 
 
@@ -182,42 +182,3 @@ def test_store_result_validates_extra_field_shape() -> None:
         )
 
 
-def test_run_flashs_copy_modes_with_stubbed_model(monkeypatch: pytest.MonkeyPatch) -> None:
-    adata = _make_adata()
-
-    class DummyFlashS:
-        def __init__(
-            self,
-            n_features: int,
-            n_scales: int,
-            min_expressed: int,
-            random_state: int | None,
-        ) -> None:
-            self.n_features = n_features
-            self.n_scales = n_scales
-            self.min_expressed = min_expressed
-            self.random_state = random_state
-            self.bandwidths = [0.25, 0.5, 1.0]
-
-        def fit_test(
-            self,
-            coords: np.ndarray,
-            X: np.ndarray,
-            gene_names: list[str],
-        ) -> FlashSResult:
-            assert coords.shape[0] == X.shape[0]
-            return _make_result(gene_names)
-
-    monkeypatch.setattr("flashs.tl._svg.FlashS", DummyFlashS)
-
-    result = run_flashs(adata, key_added="k", copy=False, n_features=16, n_scales=4)
-    assert isinstance(result, FlashSResult)
-    assert "k_pvalue" in adata.var.columns
-    assert adata.uns["k"]["n_features"] == 16
-    assert adata.uns["k"]["n_scales"] == 3  # length of DummyFlashS.bandwidths
-
-    adata2 = _make_adata()
-    out = run_flashs(adata2, key_added="k2", copy=True)
-    assert out is not adata2
-    assert "k2_pvalue" in out.var.columns
-    assert "k2_pvalue" not in adata2.var.columns
