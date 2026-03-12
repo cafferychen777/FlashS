@@ -99,6 +99,14 @@ In our evaluation on the [Open Problems SVG benchmark](https://openproblems.bio/
 
 FlashS is intended for settings where informative gene ranking, calibrated inference, and sparse-data scalability all matter.
 
+The public benchmark snapshot used for manuscript comparisons is available in the
+[Open Problems SVG fork](https://github.com/cafferychen777/task_spatially_variable_genes/tree/flashs-benchmark-v1)
+at tag [`flashs-benchmark-v1`](https://github.com/cafferychen777/task_spatially_variable_genes/tree/flashs-benchmark-v1).
+The FlashS method entry is
+[here](https://github.com/cafferychen777/task_spatially_variable_genes/tree/flashs-benchmark-v1/src/methods/flashs),
+and the combined public snapshot includes the additional comparison methods
+PreTSA, Hotspot, and scBSP.
+
 ## Citation
 
 ```bibtex
