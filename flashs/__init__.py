@@ -1,13 +1,12 @@
 """
-Flash-S: Fast Spatial Variable Gene Detection via Random Fourier Features
+Flash-S: Frequency-domain kernel testing for spatially variable genes.
 
-Ultra-fast spatial expression pattern detection for million-scale
-spatial transcriptomics data.
+Spatially variable gene detection for sparse spatial transcriptomics.
 
 Features
 --------
 - O(nnz * D) complexity exploiting expression sparsity
-- Random Fourier Features for kernel approximation
+- Random Fourier Features for multi-scale kernel approximation
 - Three-part test (binary, rank, direct) for zero-inflation robustness
 - Analytic p-values via scaled chi-square distribution
 - AnnData/Scanpy ecosystem integration
@@ -15,7 +14,7 @@ Features
 Quick Start
 -----------
 >>> from flashs import FlashS
->>> result = FlashS().fit(coords).test(expression_matrix)
+>>> result = FlashS().fit_test(coords, expression_matrix)
 >>> print(result.significant_genes())
 
 With AnnData (scanpy-style):

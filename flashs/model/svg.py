@@ -1,9 +1,8 @@
 """
 Flash-S: Frequency-domain Linearized Adaptive Spatial Hypothesis testing via Sketching.
 
-Ultra-fast spatial expression pattern detection for million-scale
-spatial transcriptomics data using Random Fourier Features and
-true sketching (no N×D matrix storage).
+Frequency-domain kernel testing for sparse spatial transcriptomics
+using Random Fourier Features and true sketching (no N×D matrix storage).
 
 Complexity:
 - fit():  O(N·D) centering + O(M·D) variances + O(M·D²/L) covariance norms
