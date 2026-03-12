@@ -21,7 +21,8 @@ def test_flashs_fit_test_smoke_sparse(small_coords, small_sparse_expr, gene_name
 
 def test_flashs_return_projections_shape(small_coords, small_sparse_expr, gene_names) -> None:
     model = FlashS(n_features=12, n_scales=3, min_expressed=1, random_state=0)
-    result = model.fit(small_coords).test(
+    result = model.fit_test(
+        small_coords,
         small_sparse_expr,
         gene_names=gene_names,
         return_projections=True,

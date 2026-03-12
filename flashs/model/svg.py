@@ -464,7 +464,7 @@ class FlashS:
     >>> expr = sparse.random(n_cells, n_genes, density=0.01)
     >>>
     >>> # Run test
-    >>> result = FlashS().fit(coords).test(expr)
+    >>> result = FlashS().fit_test(coords, expr)
     >>> print(f"Found {result.n_significant} significant genes")
     """
 
