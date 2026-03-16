@@ -59,6 +59,8 @@ result.to_dataframe()
 
 See the [quickstart notebook](examples/quickstart.ipynb) for a complete walkthrough.
 
+FlashS is also available as a tool in [ChatSpatial](https://github.com/cafferychen777/ChatSpatial), an MCP server for spatial transcriptomics — run SVG detection through natural language from any compatible client.
+
 ## Benchmark
 
 On the [Open Problems SVG benchmark](https://openproblems.bio/results/spatially_variable_genes/) (50 datasets across 9 spatial transcriptomics platforms), FlashS achieves a mean Kendall τ of 0.935, exceeding the next-best method (SPARK-X, τ = 0.886) by Δτ = 0.049.
