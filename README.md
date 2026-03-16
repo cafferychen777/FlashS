@@ -83,12 +83,13 @@ See [docs/methods.md](docs/methods.md) for the full mathematical formulation.
 
 ```bibtex
 @article{yang2026flashs,
-  title   = {Frequency-domain kernels enable atlas-scale detection of
-             spatially variable genes},
-  author  = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
-  year    = {2026},
-  journal = {bioRxiv},
-  url     = {https://github.com/cafferychen777/FlashS}
+  title     = {Frequency-domain kernels enable atlas-scale detection of
+               spatially variable genes},
+  author    = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
+  year      = {2026},
+  journal   = {bioRxiv},
+  doi       = {10.64898/2026.03.12.711372},
+  url       = {https://www.biorxiv.org/content/early/2026/03/16/2026.03.12.711372}
 }
 ```
 
