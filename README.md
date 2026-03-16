@@ -9,6 +9,12 @@
 
 FlashS detects spatially variable genes (SVGs) in spatial transcriptomics data. It reformulates multi-scale Gaussian kernel testing in the frequency domain, where expression sparsity accelerates computation rather than complicating it.
 
+<p align="center">
+  <img src="paper/figures/fig1_overview.png" alt="FlashS overview" width="900">
+</p>
+
+**Overview of FlashS.** **(a)** Spatial coordinates are transformed into Random Fourier Features (RFF), approximating kernel evaluations via inner products in a low-dimensional feature space. **(b)** A three-part test evaluates binary expression, rank-transformed intensities, and raw counts against spatial features at multiple bandwidth scales. **(c)** Per-scale p-values are combined via the Cauchy combination rule to yield a single p-value per gene.
+
 ## Why FlashS
 
 SVG detection methods face a fundamental trade-off: expressive kernels (Gaussian, Matérn) can detect arbitrary spatial patterns — gradients, hotspots, domain boundaries — but require O(n²) distance or covariance matrices. Scalable alternatives gain speed by restricting what they can find: low-rank periodic projections, fixed polynomial bases, or nearest-neighbor approximations.
