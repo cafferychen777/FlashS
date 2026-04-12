@@ -84,14 +84,16 @@ See [docs/methods.md](docs/methods.md) for the full mathematical formulation.
 ## Citation
 
 ```bibtex
-@article{yang2026flashs,
-  title     = {Frequency-domain kernels enable atlas-scale detection of
-               spatially variable genes},
-  author    = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
-  year      = {2026},
-  journal   = {bioRxiv},
-  doi       = {10.64898/2026.03.12.711372},
-  url       = {https://www.biorxiv.org/content/early/2026/03/16/2026.03.12.711372}
+@article {Yang2026.03.12.711372,
+    author = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
+    title = {Multi-scale spatial testing recovers gene programs missed by existing detection methods},
+    elocation-id = {2026.03.12.711372},
+    year = {2026},
+    doi = {10.64898/2026.03.12.711372},
+    publisher = {Cold Spring Harbor Laboratory},
+    URL = {https://www.biorxiv.org/content/early/2026/04/09/2026.03.12.711372},
+    eprint = {https://www.biorxiv.org/content/early/2026/04/09/2026.03.12.711372.full.pdf},
+    journal = {bioRxiv}
 }
 ```
 

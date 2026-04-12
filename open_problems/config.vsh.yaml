@@ -12,10 +12,16 @@ description: |
 references:
   bibtex:
     - |
-      @article{flashs2025,
-        title={FlashS: Frequency-domain Linearized Adaptive Spatial Hypothesis testing via Sketching},
-        author={Chen, Caffery and others},
-        year={2025}
+      @article {Yang2026.03.12.711372,
+          author = {Yang, Chen and Zhang, Xianyang and Chen, Jun},
+          title = {Multi-scale spatial testing recovers gene programs missed by existing detection methods},
+          elocation-id = {2026.03.12.711372},
+          year = {2026},
+          doi = {10.64898/2026.03.12.711372},
+          publisher = {Cold Spring Harbor Laboratory},
+          URL = {https://www.biorxiv.org/content/early/2026/04/09/2026.03.12.711372},
+          eprint = {https://www.biorxiv.org/content/early/2026/04/09/2026.03.12.711372.full.pdf},
+          journal = {bioRxiv}
       }
 info:
   preferred_normalization: counts
