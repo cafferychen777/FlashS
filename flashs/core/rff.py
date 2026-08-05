@@ -71,6 +71,11 @@ def sample_spectral_frequencies(
     if rng is None:
         rng = np.random.default_rng()
 
+    if n_features < 1:
+        raise ValueError(f"n_features must be >= 1, got {n_features}")
+    if n_dims < 1:
+        raise ValueError(f"n_dims must be >= 1, got {n_dims}")
+
     sigma = np.atleast_1d(bandwidth).astype(np.float64)
     if sigma.shape[0] == 1:
         sigma = np.repeat(sigma, n_dims)
@@ -78,6 +83,8 @@ def sample_spectral_frequencies(
         raise ValueError(
             f"bandwidth length ({sigma.shape[0]}) must be 1 or n_dims ({n_dims})"
         )
+    if not np.isfinite(sigma).all() or np.any(sigma <= 0):
+        raise ValueError("bandwidth values must be finite and > 0")
 
     if kernel == KernelType.GAUSSIAN:
         omega = rng.standard_normal((n_features, n_dims))
@@ -132,5 +139,4 @@ class RFFParams:
     def n_dims(self) -> int:
         """Spatial dimensionality d."""
         return self.omega.shape[1]
-
 

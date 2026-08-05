@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import Literal
 
 if TYPE_CHECKING:
     import anndata as ad
 
+from ..core.rff import KernelType
 from ..io.anndata import _extract_adata, _store_result
 from ..model.svg import FlashS, FlashSResult
 
@@ -18,7 +20,12 @@ def _run_and_store(
     genes: list[str] | None,
     n_features: int,
     n_scales: int,
+    kernel: KernelType,
+    bandwidth: float | list[float] | None,
     min_expressed: int,
+    normalize: bool | str,
+    log_transform: bool,
+    adjustment: Literal["bh", "bonferroni", "holm", "by", "storey", "none"],
     key_added: str,
     random_state: int | None,
 ) -> FlashSResult:
@@ -30,7 +37,12 @@ def _run_and_store(
     model = FlashS(
         n_features=n_features,
         n_scales=n_scales,
+        kernel=kernel,
+        bandwidth=bandwidth,
         min_expressed=min_expressed,
+        normalize=normalize,
+        log_transform=log_transform,
+        adjustment=adjustment,
         random_state=random_state,
     )
     result = model.fit_test(coords, X, gene_names)
@@ -63,7 +75,12 @@ def spatial_variable_genes(
     genes: list[str] | None = None,
     n_features: int = 500,
     n_scales: int = 7,
+    kernel: KernelType = KernelType.GAUSSIAN,
+    bandwidth: float | list[float] | None = None,
     min_expressed: int = 5,
+    normalize: bool | str = False,
+    log_transform: bool = False,
+    adjustment: Literal["bh", "bonferroni", "holm", "by", "storey", "none"] = "bh",
     key_added: str = "flashs",
     copy: bool = False,
     random_state: int | None = 0,
@@ -90,8 +107,19 @@ def spatial_variable_genes(
         Number of Random Fourier Features (D).
     n_scales
         Number of bandwidth scales (L).
+    kernel
+        RFF kernel type.
+    bandwidth
+        Manual bandwidth or bandwidth list. ``None`` estimates scales adaptively.
     min_expressed
         Minimum number of expressing cells to test a gene.
+    normalize
+        Whether to normalize expression data. Use ``"auto"`` to normalize
+        only when values look like raw counts.
+    log_transform
+        Whether to apply log1p transformation.
+    adjustment
+        Multiple-testing correction method.
     key_added
         Key prefix for results in ``adata.var`` and ``adata.uns``.
     copy
@@ -136,7 +164,8 @@ def spatial_variable_genes(
 
     _run_and_store(
         adata, spatial_key, layer, genes,
-        n_features, n_scales, min_expressed, key_added, random_state,
+        n_features, n_scales, kernel, bandwidth, min_expressed,
+        normalize, log_transform, adjustment, key_added, random_state,
     )
 
     return adata if copy else None

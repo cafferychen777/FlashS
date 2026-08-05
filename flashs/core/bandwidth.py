@@ -78,6 +78,14 @@ def estimate_bandwidth(
     Laplacian's Fiedler value (second smallest eigenvalue), which
     reflects the global geometry of the point cloud.
     """
+    coords = np.asarray(coords, dtype=np.float64)
+    if coords.ndim != 2 or coords.shape[1] == 0:
+        raise ValueError(
+            "coords must be a 2D array with at least one spatial dimension"
+        )
+    if not np.isfinite(coords).all():
+        raise ValueError("coords must contain only finite values")
+
     n_samples = coords.shape[0]
 
     if n_samples < 2:
@@ -304,6 +312,16 @@ def compute_adaptive_scales(
     extent, we ensure large-scale patterns (tissue gradients) are also
     captured by the RFF features.
     """
+    coords = np.asarray(coords, dtype=np.float64)
+    if n_scales < 1:
+        raise ValueError(f"n_scales must be >= 1, got {n_scales}")
+    if coords.ndim != 2 or coords.shape[1] == 0:
+        raise ValueError(
+            "coords must be a 2D array with at least one spatial dimension"
+        )
+    if not np.isfinite(coords).all():
+        raise ValueError("coords must contain only finite values")
+
     if coords.shape[0] < 2:
         fallback = 1.0
         return sorted([fallback] * n_scales)

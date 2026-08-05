@@ -41,6 +41,40 @@ def test_sample_spectral_frequencies_validates_bandwidth_shape() -> None:
         )
 
 
+def test_sample_spectral_frequencies_validates_positive_finite_parameters() -> None:
+    with pytest.raises(ValueError, match="n_features"):
+        sample_spectral_frequencies(
+            n_features=0,
+            n_dims=2,
+            bandwidth=1.0,
+            rng=np.random.default_rng(0),
+        )
+
+    with pytest.raises(ValueError, match="n_dims"):
+        sample_spectral_frequencies(
+            n_features=8,
+            n_dims=0,
+            bandwidth=1.0,
+            rng=np.random.default_rng(0),
+        )
+
+    with pytest.raises(ValueError, match="bandwidth values"):
+        sample_spectral_frequencies(
+            n_features=8,
+            n_dims=2,
+            bandwidth=np.array([1.0, np.inf]),
+            rng=np.random.default_rng(0),
+        )
+
+    with pytest.raises(ValueError, match="bandwidth values"):
+        sample_spectral_frequencies(
+            n_features=8,
+            n_dims=2,
+            bandwidth=0.0,
+            rng=np.random.default_rng(0),
+        )
+
+
 def test_sample_spectral_frequencies_rejects_unknown_kernel() -> None:
     with pytest.raises(ValueError, match="Unknown kernel type"):
         sample_spectral_frequencies(

@@ -8,6 +8,7 @@ import pytest
 ad = pytest.importorskip("anndata")
 pd = pytest.importorskip("pandas")
 
+from flashs.core.rff import KernelType
 from flashs.model.svg import FlashSResult
 
 
@@ -82,6 +83,50 @@ def test_tl_svg_copy_returns_adata(monkeypatch: pytest.MonkeyPatch) -> None:
     assert out is not adata
     assert "flashs_pvalue" in out.var.columns
     assert "flashs_pvalue" not in adata.var.columns
+
+
+def test_tl_svg_forwards_core_model_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    """High-level AnnData API must stay aligned with FlashS model options."""
+    from flashs.tl import _svg
+
+    captured_kwargs = {}
+
+    class DummyFlashS:
+        def __init__(self, **kwargs):
+            captured_kwargs.update(kwargs)
+            self.n_features = kwargs.get("n_features", 500)
+            self.bandwidths = [0.5, 1.0]
+
+        def fit_test(self, coords, X, gene_names):
+            return _make_result(gene_names)
+
+    monkeypatch.setattr(_svg, "FlashS", DummyFlashS)
+
+    adata = _make_adata()
+    _svg.spatial_variable_genes(
+        adata,
+        n_features=32,
+        n_scales=4,
+        kernel=KernelType.LAPLACIAN,
+        bandwidth=[0.25, 0.5],
+        min_expressed=10,
+        normalize="auto",
+        log_transform=True,
+        adjustment="by",
+        random_state=11,
+    )
+
+    assert captured_kwargs == {
+        "n_features": 32,
+        "n_scales": 4,
+        "kernel": KernelType.LAPLACIAN,
+        "bandwidth": [0.25, 0.5],
+        "min_expressed": 10,
+        "normalize": "auto",
+        "log_transform": True,
+        "adjustment": "by",
+        "random_state": 11,
+    }
 
 
 def test_tl_module_alias() -> None:

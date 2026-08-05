@@ -18,6 +18,20 @@ def test_compute_adaptive_scales_rejects_unknown_coverage() -> None:
         compute_adaptive_scales(coords, coverage="bad")  # type: ignore[arg-type]
 
 
+def test_bandwidth_helpers_validate_coordinate_contracts() -> None:
+    with pytest.raises(ValueError, match="2D array"):
+        estimate_bandwidth(np.arange(5, dtype=np.float64))
+
+    with pytest.raises(ValueError, match="finite"):
+        estimate_bandwidth(np.array([[0.0, 1.0], [np.inf, 2.0]]))
+
+    with pytest.raises(ValueError, match="n_scales"):
+        compute_adaptive_scales(np.zeros((5, 2), dtype=np.float64), n_scales=0)
+
+    with pytest.raises(ValueError, match="2D array"):
+        compute_adaptive_scales(np.empty((5, 0), dtype=np.float64))
+
+
 def test_small_sample_fallbacks_are_stable() -> None:
     coords = np.array([[0.0, 1.0]])
 

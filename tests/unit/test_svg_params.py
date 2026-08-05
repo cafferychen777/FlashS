@@ -14,10 +14,14 @@ def test_constructor_rejects_invalid_params() -> None:
         FlashS(n_scales=0)
     with pytest.raises(ValueError):
         FlashS(min_expressed=-1)
+    with pytest.raises(ValueError, match="n_features must be >= n_scales"):
+        FlashS(n_features=2, n_scales=3)
     with pytest.raises(ValueError):
         FlashS(bandwidth=[])
     with pytest.raises(ValueError):
         FlashS(bandwidth=[-1.0, 2.0])
+    with pytest.raises(ValueError, match="n_features must be >= number of bandwidths"):
+        FlashS(n_features=2, bandwidth=[0.5, 1.0, 2.0])
 
 
 def test_bandwidth_is_normalized_to_list() -> None:
@@ -63,6 +67,16 @@ def test_fit_rejects_empty_coords() -> None:
         FlashS().fit(np.empty((0, 2), dtype=np.float64))
 
 
+def test_fit_rejects_invalid_coordinate_values() -> None:
+    with pytest.raises(ValueError, match="finite"):
+        FlashS(n_features=8, n_scales=2).fit(
+            np.array([[0.0, 1.0], [np.nan, 2.0]], dtype=np.float64)
+        )
+
+    with pytest.raises(ValueError, match="1D array or a 2D array"):
+        FlashS(n_features=8, n_scales=2).fit(np.empty((10, 0), dtype=np.float64))
+
+
 def test_fit_accepts_1d_coords_by_reshaping() -> None:
     coords_1d = np.linspace(0.0, 1.0, 20)
     model = FlashS(n_features=8, n_scales=2, random_state=0).fit(coords_1d)
@@ -101,3 +115,40 @@ def test_test_returns_empty_result_when_no_gene_passes_threshold() -> None:
     assert not result.tested_mask.any()
     assert np.all(result.pvalues == 1.0)
     assert np.all(result.qvalues == 1.0)
+
+
+def test_test_rejects_invalid_expression_inputs(small_coords) -> None:
+    model = FlashS(n_features=8, n_scales=2, random_state=0).fit(small_coords)
+
+    with pytest.raises(ValueError, match="2D expression matrix"):
+        model.test(np.ones(10, dtype=np.float64))
+
+    X_nan = np.ones((small_coords.shape[0], 2), dtype=np.float64)
+    X_nan[0, 0] = np.nan
+    with pytest.raises(ValueError, match="finite expression values"):
+        model.test(X_nan)
+
+    X_inf = sparse.csr_matrix(X_nan)
+    X_inf.data[0] = np.inf
+    with pytest.raises(ValueError, match="finite expression values"):
+        model.test(X_inf)
+
+
+def test_sparse_explicit_zeros_are_not_counted_as_expression() -> None:
+    rng = np.random.default_rng(7)
+    n_cells = 80
+    coords = rng.normal(size=(n_cells, 2))
+
+    rows = np.arange(35)
+    cols = np.zeros_like(rows)
+    data = np.r_[np.ones(15), np.zeros(20)]
+    X = sparse.csr_matrix((data, (rows, cols)), shape=(n_cells, 1))
+
+    result = FlashS(n_features=8, n_scales=2, min_expressed=1, random_state=0).fit_test(
+        coords,
+        X,
+    )
+
+    assert result.n_expressed[0] == 15
+    assert result.n_tested == 0
+    assert result.pvalues[0] == 1.0

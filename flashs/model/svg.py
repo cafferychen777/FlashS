@@ -484,6 +484,11 @@ class FlashS:
             raise ValueError(f"n_features must be >= 1, got {n_features}")
         if n_scales < 1:
             raise ValueError(f"n_scales must be >= 1, got {n_scales}")
+        if bandwidth is None and n_features < n_scales:
+            raise ValueError(
+                "n_features must be >= n_scales so every adaptive scale "
+                f"receives at least one feature, got {n_features} < {n_scales}"
+            )
         if min_expressed < 0:
             raise ValueError(f"min_expressed must be >= 0, got {min_expressed}")
         if bandwidth is not None:
@@ -492,6 +497,12 @@ class FlashS:
                 raise ValueError("bandwidth must be non-empty")
             if any(b <= 0 for b in bandwidth):
                 raise ValueError(f"bandwidth values must be > 0, got {bandwidth}")
+            if n_features < len(bandwidth):
+                raise ValueError(
+                    "n_features must be >= number of bandwidths so every "
+                    f"scale receives at least one feature, got {n_features} "
+                    f"< {len(bandwidth)}"
+                )
 
         self.n_features = n_features
         self.n_scales = n_scales
@@ -552,8 +563,14 @@ class FlashS:
         coords = np.asarray(coords, dtype=np.float64)
         if coords.ndim == 1:
             coords = coords.reshape(-1, 1)
+        if coords.ndim != 2 or coords.shape[1] == 0:
+            raise ValueError(
+                "coords must be a 1D array or a 2D array with at least one dimension"
+            )
         if coords.shape[0] == 0:
             raise ValueError("coords must have at least one cell (got 0 rows)")
+        if not np.isfinite(coords).all():
+            raise ValueError("coords must contain only finite values")
 
         self._coords = coords
         rng = np.random.default_rng(self.random_state)
@@ -696,7 +713,19 @@ class FlashS:
         if sparse.issparse(X):
             X_csc = X if sparse.isspmatrix_csc(X) else X.tocsc()
             return X_csc, True
-        return np.asarray(X), False
+        X_arr = np.asarray(X)
+        if X_arr.ndim != 2:
+            raise ValueError("X must be a 2D expression matrix")
+        return X_arr, False
+
+    @staticmethod
+    def _validate_expression_values(
+        X: NDArray[np.floating] | sparse.spmatrix,
+    ) -> None:
+        """Validate expression values before statistical computation."""
+        values = X.data if sparse.issparse(X) else np.asarray(X)
+        if not np.isfinite(values).all():
+            raise ValueError("X must contain only finite expression values")
 
     @staticmethod
     def _extract_gene_column(
@@ -709,7 +738,11 @@ class FlashS:
             start, end = X.indptr[gene_idx], X.indptr[gene_idx + 1]
             row_idx = X.indices[start:end]
             values = np.asarray(X.data[start:end], dtype=np.float64)
-            return row_idx, values, end - start
+            nonzero = values != 0
+            if not np.all(nonzero):
+                row_idx = row_idx[nonzero]
+                values = values[nonzero]
+            return row_idx, values, len(values)
 
         col = np.asarray(X[:, gene_idx]).ravel()
         row_idx = np.nonzero(col)[0]
@@ -961,6 +994,9 @@ class FlashS:
         if not self._fitted:
             raise RuntimeError("Must call fit() before test()")
 
+        if not hasattr(X, "shape") or len(X.shape) != 2:
+            raise ValueError("X must be a 2D expression matrix")
+
         n_cells, n_genes = X.shape
 
         if n_cells != self._coords.shape[0]:
@@ -973,6 +1009,7 @@ class FlashS:
 
         # Preprocessing
         X = self._normalize_expression(X, self.normalize, self.log_transform, verbose)
+        self._validate_expression_values(X)
 
         # CRITICAL: CSC gives O(1) column start/end access (vs O(N) in CSR)
         X, is_sparse = self._prepare_expression_matrix(X)
