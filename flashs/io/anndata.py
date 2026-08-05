@@ -130,20 +130,25 @@ def _store_result(
                 default = np.nan
             adata.var[f"{key_added}_{col_name}"] = default
 
-    # Direct positional write — no name-based lookup, handles duplicates correctly
     pos = var_indices
-    adata.var[f"{key_added}_pvalue"].values[pos] = result.pvalues
-    adata.var[f"{key_added}_qvalue"].values[pos] = result.qvalues
-    adata.var[f"{key_added}_statistic"].values[pos] = result.statistics
-    adata.var[f"{key_added}_effect_size"].values[pos] = result.effect_size
+
+    def assign_var_column(column: str, values: np.ndarray) -> None:
+        """Write values by row position through pandas' assignment API."""
+        col_pos = adata.var.columns.get_loc(column)
+        adata.var.iloc[pos, col_pos] = values
+
+    # Direct positional write: no name-based row lookup, handles duplicate var_names.
+    assign_var_column(f"{key_added}_pvalue", result.pvalues)
+    assign_var_column(f"{key_added}_qvalue", result.qvalues)
+    assign_var_column(f"{key_added}_statistic", result.statistics)
+    assign_var_column(f"{key_added}_effect_size", result.effect_size)
 
     for col_name, values in extra_items:
-        adata.var[f"{key_added}_{col_name}"].values[pos] = values
+        assign_var_column(f"{key_added}_{col_name}", values)
 
     adata.uns[key_added] = {
         "n_tested": result.n_tested,
         "n_significant": result.n_significant,
         **(metadata or {}),
     }
-
 
